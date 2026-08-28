@@ -13,6 +13,7 @@ const requiredToolFor = (message) => {
   if (/\b(track|where.*order|order status)\b/.test(text)) return 'trackOrder';
   return null;
 };
+const isOrderRequest = (message) => /\b(buy|proceed|place|confirm|order)\b/.test(message.toLowerCase());
 
 const runAgent = async ({ message, history = [], context }) => {
   const currentProduct = context.currentProduct ? {
@@ -37,6 +38,7 @@ const runAgent = async ({ message, history = [], context }) => {
   ];
   const products = [];
   const requiredTool = requiredToolFor(message);
+  const previousProduct = [...history].reverse().find((item) => item.metadata?.products?.length)?.metadata.products[0];
   let preExecutedTool = false;
   if (requiredTool === 'checkInventory') {
     const previousProduct = [...history].reverse().find((item) => item.metadata?.products?.length)?.metadata.products[0];
@@ -52,6 +54,14 @@ const runAgent = async ({ message, history = [], context }) => {
       preExecutedTool = true;
     }
   }
+  if (isOrderRequest(message) && previousProduct?.id && !context.pendingOrder) {
+    console.log('[Agent] Preparing order preview from the previous product result');
+    const result = await executeTool('prepareOrder', { productId: previousProduct.id, quantity: 1 }, context);
+    context.pendingOrder = result;
+    messages.push({ role: 'assistant', content: null, tool_calls: [{ id: 'order-context', type: 'function', function: { name: 'prepareOrder', arguments: JSON.stringify({ productId: previousProduct.id, quantity: 1 }) } }] });
+    messages.push({ role: 'tool', tool_call_id: 'order-context', name: 'prepareOrder', content: JSON.stringify(result) });
+    preExecutedTool = true;
+  }
   console.log('[Agent] User message received');
   for (let turn = 0; turn < 6; turn += 1) {
     console.log('[Agent] Calling OpenRouter');
@@ -66,7 +76,7 @@ const runAgent = async ({ message, history = [], context }) => {
     messages.push(assistant);
     if (!assistant.tool_calls?.length) {
       console.log('[Agent] Sending final response');
-      return { text: assistant.content || 'I could not find an answer for that request.', products };
+      return { text: assistant.content || 'I could not find an answer for that request.', products, pendingOrder: context.pendingOrder };
     }
     for (const call of assistant.tool_calls) {
       console.log(`[Agent] Tool requested: ${call.function.name}`);
@@ -74,6 +84,10 @@ const runAgent = async ({ message, history = [], context }) => {
       try {
         console.log(`[Agent] Executing ${call.function.name}`);
         result = await executeTool(call.function.name, JSON.parse(call.function.arguments || '{}'), context);
+        if (call.function.name === 'updateCustomerProfile' && context.pendingOrder?.productId) {
+          result.orderPreview = await executeTool('prepareOrder', { productId: context.pendingOrder.productId, quantity: context.pendingOrder.quantity || 1 }, context);
+          context.pendingOrder = result.orderPreview;
+        }
         if (result.products) console.log(`[Agent] MongoDB returned ${result.products.length} products`);
       }
       catch (error) { result = { error: error.message }; }

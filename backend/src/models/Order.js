@@ -42,12 +42,26 @@ const orderSchema = new mongoose.Schema(
       type: String,
       default: 'INR',
     },
+    delivery: {
+      fullName: String,
+      phone: String,
+      email: String,
+      address: String,
+      city: String,
+      state: String,
+      pincode: String,
+    },
     paymentId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Payment',
     },
     razorpayOrderId: {
       type: String,
+    },
+    idempotencyKey: {
+      type: String,
+      unique: true,
+      sparse: true,
     },
     status: {
       type: String,

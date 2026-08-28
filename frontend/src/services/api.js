@@ -48,4 +48,14 @@ export async function sendAgentMessage(message, sessionId, merchantId, currentPr
   return response.data.data
 }
 
+export async function confirmAgentOrder(sessionId) {
+  const response = await api.post('/api/agent/order/confirm', { sessionId })
+  return response.data.data.order
+}
+
+export async function cancelAgentOrder(sessionId) {
+  const response = await api.post('/api/agent/order/cancel', { sessionId })
+  return response.data.data
+}
+
 export default api

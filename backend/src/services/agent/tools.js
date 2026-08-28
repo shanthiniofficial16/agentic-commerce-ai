@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 const Cart = require('../../models/Cart');
 const Order = require('../../models/Order');
 const Product = require('../../models/Product');
+const { createOrder, getProfile, prepareOrder, saveProfile, profileFields } = require('../order.service');
 
 const productView = (product) => ({
   id: product._id.toString(),
@@ -75,6 +76,18 @@ const tools = [
   {
     type: 'function',
     function: { name: 'trackOrder', description: 'Get the current status of one authenticated customer order.', parameters: { type: 'object', required: ['orderId'], properties: { orderId: { type: 'string' } } } },
+  },
+  {
+    type: 'function',
+    function: { name: 'getCustomerProfile', description: 'Get the authenticated customer delivery profile.', parameters: { type: 'object', properties: {} } },
+  },
+  {
+    type: 'function',
+    function: { name: 'updateCustomerProfile', description: 'Save complete delivery details for the authenticated customer. Never include payment credentials.', parameters: { type: 'object', required: profileFields, properties: { fullName: { type: 'string' }, phone: { type: 'string' }, email: { type: 'string' }, address: { type: 'string' }, city: { type: 'string' }, state: { type: 'string' }, pincode: { type: 'string' } } } },
+  },
+  {
+    type: 'function',
+    function: { name: 'prepareOrder', description: 'Prepare an order preview using current database price, inventory, and saved delivery profile. Does not create an order.', parameters: { type: 'object', required: ['productId', 'quantity'], properties: { productId: { type: 'string' }, quantity: { type: 'integer', minimum: 1, maximum: 100 } } } },
   },
 ];
 
@@ -157,6 +170,19 @@ const executeTool = async (name, rawArgs, context) => {
     return name === 'trackOrder'
       ? { orderId: order._id.toString(), status: order.status, createdAt: order.createdAt }
       : { order: { id: order._id.toString(), items: order.items, subtotal: order.subtotal, total: order.total, currency: order.currency, status: order.status, createdAt: order.createdAt } };
+  }
+  if (name === 'getCustomerProfile') {
+    const profile = await getProfile(userId);
+    return { profile: profile ? { ...profile, phone: profile.phone.replace(/(\d{2})\d{6}(\d{2})/, '$1******$2') } : null };
+  }
+  if (name === 'updateCustomerProfile') {
+    const profile = await saveProfile(userId, args);
+    return { saved: true, profile: { ...profile, phone: profile.phone.replace(/(\d{2})\d{6}(\d{2})/, '$1******$2') } };
+  }
+  if (name === 'prepareOrder') {
+    const result = await prepareOrder({ userId, merchantId, productId: validId(args.productId, 'productId'), quantity: Number(args.quantity) });
+    context.pendingOrder = result.state === 'AWAITING_APPROVAL' ? result : null;
+    return result;
   }
   throw new Error('Unsupported agent tool');
 };
