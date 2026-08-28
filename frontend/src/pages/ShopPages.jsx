@@ -31,7 +31,31 @@ import '../Agent.css'
 
 const categories = ['Electronics', 'Fashion', 'Beauty', 'Home & Kitchen', 'Grocery', 'Sports', 'Books', 'Accessories']
 const money = (value) => `₹${Number(value || 0).toLocaleString('en-IN')}`
-const imageFor = (product) => product?.images?.[0] || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800&q=80'
+const categoryImages = {
+  phone: 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&w=900&q=80',
+  laptop: 'https://images.unsplash.com/photo-1496181133206-80ce9b88a853?auto=format&fit=crop&w=900&q=80',
+  headphone: 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?auto=format&fit=crop&w=900&q=80',
+  watch: 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&w=900&q=80',
+  tablet: 'https://images.unsplash.com/photo-1544244015-0df4b3ffc6b0?auto=format&fit=crop&w=900&q=80',
+  camera: 'https://images.unsplash.com/photo-1516035069371-29a1b244cc32?auto=format&fit=crop&w=900&q=80',
+  monitor: 'https://images.unsplash.com/photo-1527443224154-c4a3942d3acf?auto=format&fit=crop&w=900&q=80',
+  keyboard: 'https://images.unsplash.com/photo-1587829741301-dc798b83add3?auto=format&fit=crop&w=900&q=80',
+  gaming: 'https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=900&q=80',
+  sports: 'https://images.unsplash.com/photo-1531415074968-036ba1b575da?auto=format&fit=crop&w=900&q=80',
+  kitchen: 'https://images.unsplash.com/photo-1556911220-e15b29be8c8f?auto=format&fit=crop&w=900&q=80',
+  accessory: 'https://images.unsplash.com/photo-1526170375885-4d8ecf77b99f?auto=format&fit=crop&w=900&q=80',
+}
+const imageFor = (product) => {
+  if (product?.images?.[0]) return product.images[0]
+  const text = `${product?.name || ''} ${product?.subcategory || ''} ${product?.category || ''}`.toLowerCase()
+  const key = Object.keys(categoryImages).find((candidate) => text.includes(candidate)) || 'accessory'
+  return categoryImages[key]
+}
+const imageErrorFallback = (event, product) => {
+  const fallback = imageFor({ ...product, images: [] })
+  if (event.currentTarget.src !== fallback) event.currentTarget.src = fallback
+  else event.currentTarget.onerror = null
+}
 
 function ProductCard({ product, onAdd }) {
   const [busy, setBusy] = useState(false)
@@ -40,7 +64,7 @@ function ProductCard({ product, onAdd }) {
   const discount = product.discountPercentage || product.price?.discountPercentage || (originalPrice ? Math.round((1 - sellingPrice / originalPrice) * 100) : 0)
   const handleAdd = async () => { setBusy(true); await onAdd(product); setBusy(false) }
   return <article className="product-card">
-    <Link to={`/shop/products/${product._id}`} className="product-image-wrap"><img src={imageFor(product)} alt={product.name} /><span className="ai-badge"><Sparkles size={13} /> AI pick</span><button className="icon-button wishlist" aria-label="Add to wishlist" onClick={(event) => event.preventDefault()}><Heart size={17} /></button></Link>
+    <Link to={`/shop/products/${product._id}`} className="product-image-wrap"><img src={imageFor(product)} onError={(event) => imageErrorFallback(event, product)} alt={product.name} /><span className="ai-badge"><Sparkles size={13} /> AI pick</span><button className="icon-button wishlist" aria-label="Add to wishlist" onClick={(event) => event.preventDefault()}><Heart size={17} /></button></Link>
     <div className="product-card-body"><p className="eyebrow">{product.category}</p><Link to={`/shop/products/${product._id}`}><h3>{product.name}</h3></Link><div className="rating"><Star size={15} fill="currentColor" /> {product.ratings?.average || product.rating || '4.6'} <span>({product.ratings?.count || product.reviewCount || 0})</span></div><div className="price-row"><strong>{money(sellingPrice)}</strong>{originalPrice && <><del>{money(originalPrice)}</del><span className="discount">{discount}% off</span></>}</div><button className="add-button" onClick={handleAdd} disabled={busy || product.stock < 1}>{busy ? 'Adding...' : product.stock < 1 ? 'Out of stock' : 'Add to cart'}</button></div>
   </article>
 }
