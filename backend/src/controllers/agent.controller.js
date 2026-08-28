@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 const Conversation = require('../models/Conversation');
 const Merchant = require('../models/Merchant');
 const Product = require('../models/Product');
-const { generateAgentReply } = require('../services/llm.service');
+const { runAgent } = require('../services/agent/agentService');
 
 const chat = async (req, res) => {
   try {
@@ -47,23 +47,19 @@ const chat = async (req, res) => {
       });
     }
 
-    const products = await Product.find({ merchantId: merchant._id, active: true })
-      .select('name category price currency shortDescription description stock')
-      .limit(50)
-      .lean();
-    const reply = await generateAgentReply({
+    const result = await runAgent({
       message: message.trim(),
       history: conversation.messages.slice(-12),
-      products,
+      context: { userId: req.userId, merchantId: merchant._id },
     });
 
     conversation.messages.push({ role: 'USER', content: message.trim() });
-    conversation.messages.push({ role: 'AGENT', content: reply, metadata: { provider: 'openrouter', model: process.env.OPENROUTER_MODEL } });
+    conversation.messages.push({ role: 'AGENT', content: result.text, metadata: { provider: 'openrouter', model: process.env.OPENROUTER_MODEL } });
     await conversation.save();
 
     return res.json({
       success: true,
-      data: { message: reply, sessionId: conversation.sessionId },
+      data: { message: result.text, products: result.products, sessionId: conversation.sessionId },
     });
   } catch (error) {
     console.error('Agent chat error:', error.message);

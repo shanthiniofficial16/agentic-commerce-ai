@@ -43,4 +43,9 @@ export async function removeFromCart(productId, merchantId) {
   return response.data.data.cart
 }
 
+export async function sendAgentMessage(message, sessionId, merchantId) {
+  const response = await api.post('/api/agent/chat', { message, sessionId, merchantId })
+  return response.data.data
+}
+
 export default api

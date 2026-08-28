@@ -11,7 +11,7 @@ const createProviderError = (code, status, message) => {
   return error;
 };
 
-const generateText = async ({ messages }) => {
+const generateCompletion = async ({ messages, tools = [] }) => {
   const apiKey = process.env.OPENROUTER_API_KEY;
   const model = process.env.OPENROUTER_MODEL;
 
@@ -26,7 +26,7 @@ const generateText = async ({ messages }) => {
   try {
     const response = await axios.post(
       `${OPENROUTER_BASE_URL}/chat/completions`,
-      { model, messages },
+      { model, messages, ...(tools.length ? { tools, tool_choice: 'auto' } : {}) },
       {
         timeout: REQUEST_TIMEOUT_MS,
         headers: {
@@ -38,12 +38,11 @@ const generateText = async ({ messages }) => {
       }
     );
 
-    const text = response.data?.choices?.[0]?.message?.content;
-    if (typeof text !== 'string' || !text.trim()) {
+    if (!response.data?.choices?.[0]?.message) {
       throw createProviderError('AI_INVALID_RESPONSE', 502, 'OpenRouter returned an invalid response');
     }
 
-    return text.trim();
+    return response.data;
   } catch (error) {
     if (error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT') {
       throw createProviderError('AI_TIMEOUT', 504, 'OpenRouter API request timed out');
@@ -67,4 +66,4 @@ const generateText = async ({ messages }) => {
   }
 };
 
-module.exports = { generateText };
+module.exports = { generateCompletion };
