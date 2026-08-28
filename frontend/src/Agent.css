@@ -33,6 +33,10 @@
 .chat-product .add-button { padding: 7px; font-size: 10px; }
 .typing p { color: var(--muted); }
 .typing-dots { display: inline-block; margin-left: 3px; animation: agent-dots 1.1s steps(3, end) infinite; }
+.order-preview { display: grid; gap: 9px; margin: 12px 0 20px; padding: 18px; border: 1px solid #d5e3d6; border-left: 3px solid var(--green); background: #f5faf3; border-radius: 7px; font: 13px Arial, sans-serif; }
+.order-preview strong { color: var(--green); text-transform: uppercase; letter-spacing: 1.2px; font-size: 11px; }
+.order-preview b { padding-top: 8px; border-top: 1px solid #d5e3d6; font-size: 16px; }
+.order-preview .button { width: 100%; margin-top: 4px; }
 @keyframes agent-dots { 0%, 20% { opacity: .2; } 50% { opacity: 1; } 100% { opacity: .2; } }
 @media (max-width: 760px) {
   .agent-page { padding: 16px 16px 40px; }

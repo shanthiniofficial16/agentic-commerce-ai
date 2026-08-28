@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 const Cart = require('../../models/Cart');
 const Order = require('../../models/Order');
 const Product = require('../../models/Product');
-const { createOrder, getProfile, prepareOrder, saveProfile, profileFields } = require('../order.service');
+const { createOrder, getProfile, profileStatus, prepareOrder, saveProfile, profileFields } = require('../order.service');
 
 const productView = (product) => ({
   id: product._id.toString(),
@@ -83,7 +83,7 @@ const tools = [
   },
   {
     type: 'function',
-    function: { name: 'updateCustomerProfile', description: 'Save complete delivery details for the authenticated customer. Never include payment credentials.', parameters: { type: 'object', required: profileFields, properties: { fullName: { type: 'string' }, phone: { type: 'string' }, email: { type: 'string' }, address: { type: 'string' }, city: { type: 'string' }, state: { type: 'string' }, pincode: { type: 'string' } } } },
+    function: { name: 'updateCustomerProfile', description: 'Save any provided delivery detail fields for the authenticated customer. Merge with existing details and never include payment credentials.', parameters: { type: 'object', properties: { fullName: { type: 'string' }, phone: { type: 'string' }, email: { type: 'string' }, address: { type: 'string' }, city: { type: 'string' }, state: { type: 'string' }, pincode: { type: 'string' } } } },
   },
   {
     type: 'function',
@@ -96,7 +96,10 @@ const executeTool = async (name, rawArgs, context) => {
   const { userId, merchantId } = context;
   if (name === 'searchProducts') {
     const query = { merchantId, active: true };
-    if (args.category) query.category = new RegExp(args.category, 'i');
+    if (args.category) {
+      const category = new RegExp(args.category, 'i');
+      query.$or = [{ category }, { subcategory: category }];
+    }
     if (args.brand) query.brand = new RegExp(args.brand, 'i');
     const keywords = args.keywords || args.query;
     if (keywords) query.$text = { $search: keywords };
@@ -173,11 +176,14 @@ const executeTool = async (name, rawArgs, context) => {
   }
   if (name === 'getCustomerProfile') {
     const profile = await getProfile(userId);
-    return { profile: profile ? { ...profile, phone: profile.phone.replace(/(\d{2})\d{6}(\d{2})/, '$1******$2') } : null };
+    return { ...profileStatus(profile), profile: profile ? { ...profile, phone: profile.phone.replace(/(\d{2})\d{6}(\d{2})/, '$1******$2') } : null };
   }
   if (name === 'updateCustomerProfile') {
-    const profile = await saveProfile(userId, args);
-    return { saved: true, profile: { ...profile, phone: profile.phone.replace(/(\d{2})\d{6}(\d{2})/, '$1******$2') } };
+    const supplied = Object.fromEntries(Object.entries(args).filter(([, value]) => value !== undefined && value !== null && String(value).trim()));
+    const profile = await saveProfile(userId, supplied);
+    const missingFields = profileFields.filter((field) => !profile?.[field]?.toString().trim());
+    const status = profileStatus(profile);
+    return { saved: status.profileComplete, missingFields, invalidFields: status.invalidFields, profile: { ...profile, phone: profile.phone.replace(/(\d{2})\d{6}(\d{2})/, '$1******$2') } };
   }
   if (name === 'prepareOrder') {
     const result = await prepareOrder({ userId, merchantId, productId: validId(args.productId, 'productId'), quantity: Number(args.quantity) });

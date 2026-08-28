@@ -5,6 +5,9 @@ const Product = require('../models/Product');
 const { runAgent } = require('../services/agent/agentService');
 const { createOrder } = require('../services/order.service');
 
+const isApproval = (message) => /^(yes|confirm|confirmed|place it|place order|proceed|go ahead|yes,? place( the)? order)$/i.test(message.trim());
+const isCancellation = (message) => /^(no|cancel|cancel order|not now|maybe later|don't place it|do not place it)$/i.test(message.trim());
+
 const chat = async (req, res) => {
   try {
     const { message, sessionId, merchantId, currentProductId } = req.body;
@@ -63,10 +66,27 @@ const chat = async (req, res) => {
         .lean()
       : null;
 
+    if (isApproval(message) || isCancellation(message)) {
+      if (conversation.orderState !== 'AWAITING_APPROVAL' || !conversation.pendingOrder) {
+        return res.status(409).json({ success: false, error: { code: 'ORDER_NOT_READY', message: 'There is no order preview awaiting confirmation' } });
+      }
+      if (isCancellation(message)) {
+        conversation.orderState = 'CANCELLED';
+        conversation.pendingOrder = undefined;
+        await conversation.save();
+        return res.json({ success: true, data: { message: 'The order was cancelled.', sessionId: conversation.sessionId, cancelled: true } });
+      }
+      const order = await createOrder({ userId: req.userId, merchantId: conversation.merchantId, pendingOrder: conversation.pendingOrder, idempotencyKey: `agent:${req.userId}:${conversation.sessionId}` });
+      conversation.orderState = 'ORDER_CREATED';
+      conversation.pendingOrder = { createdOrder: order };
+      await conversation.save();
+      return res.json({ success: true, data: { message: `Order ${order.id} placed successfully.`, order, sessionId: conversation.sessionId } });
+    }
+
     const result = await runAgent({
       message: message.trim(),
       history: conversation.messages.slice(-12),
-      context: { userId: req.userId, merchantId: merchant._id, currentProduct },
+      context: { userId: req.userId, merchantId: merchant._id, currentProduct, pendingOrder: conversation.pendingOrder },
     });
 
     if (result.pendingOrder) {

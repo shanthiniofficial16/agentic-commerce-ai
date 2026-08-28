@@ -38,6 +38,13 @@ const runAgent = async ({ message, history = [], context }) => {
   ];
   const products = [];
   const requiredTool = requiredToolFor(message);
+  if (context.pendingOrder?.state === 'PROFILE_REQUIRED') {
+    const profile = await executeTool('getCustomerProfile', {}, context);
+    if (profile.profileComplete) {
+      const result = await executeTool('prepareOrder', { productId: context.pendingOrder.productId, quantity: context.pendingOrder.quantity || 1 }, context);
+      context.pendingOrder = result;
+    }
+  }
   const previousProduct = [...history].reverse().find((item) => item.metadata?.products?.length)?.metadata.products[0];
   let preExecutedTool = false;
   if (requiredTool === 'checkInventory') {
@@ -72,7 +79,7 @@ const runAgent = async ({ message, history = [], context }) => {
     });
     console.log('[Agent] OpenRouter response received');
     const assistant = response.choices?.[0]?.message;
-    if (!assistant) throw Object.assign(new Error('OpenRouter returned an invalid response'), { code: 'AI_INVALID_RESPONSE', status: 502 });
+    if (!assistant || typeof assistant !== 'object') throw Object.assign(new Error('OpenRouter returned an invalid response'), { code: 'AI_INVALID_RESPONSE', status: 502 });
     messages.push(assistant);
     if (!assistant.tool_calls?.length) {
       console.log('[Agent] Sending final response');

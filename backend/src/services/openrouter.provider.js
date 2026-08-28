@@ -38,7 +38,9 @@ const generateCompletion = async ({ messages, tools = [], toolChoice }) => {
       }
     );
 
-    if (!response.data?.choices?.[0]?.message) {
+    const choice = response.data?.choices?.[0];
+    if (!choice?.message || typeof choice.message !== 'object') {
+      console.error('[OpenRouter] Invalid response shape', JSON.stringify({ status: response.status, hasChoices: Array.isArray(response.data?.choices), choiceKeys: choice ? Object.keys(choice) : [] }));
       throw createProviderError('AI_INVALID_RESPONSE', 502, 'OpenRouter returned an invalid response');
     }
 
@@ -57,7 +59,9 @@ const generateCompletion = async ({ messages, tools = [], toolChoice }) => {
       throw createProviderError('AI_AUTH_FAILED', 502, 'OpenRouter authentication failed');
     }
     if (providerStatus === 429) {
-      throw createProviderError('AI_RATE_LIMITED', 429, 'OpenRouter rate limit exceeded');
+      const retryAfter = error.response.headers?.['retry-after'];
+      const message = retryAfter ? `OpenRouter rate limit exceeded. Try again in ${retryAfter} seconds.` : 'OpenRouter rate limit exceeded. Please try again shortly.';
+      throw createProviderError('AI_RATE_LIMITED', 429, message);
     }
     if (providerStatus >= 400) {
       throw createProviderError('AI_PROVIDER_ERROR', 502, 'OpenRouter could not process the request');
