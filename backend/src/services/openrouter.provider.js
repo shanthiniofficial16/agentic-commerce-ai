@@ -11,7 +11,7 @@ const createProviderError = (code, status, message) => {
   return error;
 };
 
-const generateCompletion = async ({ messages, tools = [] }) => {
+const generateCompletion = async ({ messages, tools = [], toolChoice }) => {
   const apiKey = process.env.OPENROUTER_API_KEY;
   const model = process.env.OPENROUTER_MODEL;
 
@@ -26,7 +26,7 @@ const generateCompletion = async ({ messages, tools = [] }) => {
   try {
     const response = await axios.post(
       `${OPENROUTER_BASE_URL}/chat/completions`,
-      { model, messages, ...(tools.length ? { tools, tool_choice: 'auto' } : {}) },
+      { model, messages, ...(tools.length ? { tools, tool_choice: toolChoice || 'auto' } : {}) },
       {
         timeout: REQUEST_TIMEOUT_MS,
         headers: {

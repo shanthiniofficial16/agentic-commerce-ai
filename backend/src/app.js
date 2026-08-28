@@ -5,11 +5,29 @@ const rateLimit = require('express-rate-limit');
 require('dotenv').config();
 
 const app = express();
+const configuredClientUrl = process.env.CLIENT_URL || 'http://localhost:5173';
+const allowedOrigins = new Set([
+  configuredClientUrl,
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
+]);
+const isDevelopmentOrigin = (origin) => {
+  if (process.env.NODE_ENV === 'production') return false;
+  try {
+    const url = new URL(origin);
+    return (url.hostname === 'localhost' || url.hostname === '127.0.0.1') && url.protocol === 'http:';
+  } catch {
+    return false;
+  }
+};
 
 // Security middleware
 app.use(helmet());
 app.use(cors({
-  origin: process.env.CLIENT_URL || 'http://localhost:5173',
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.has(origin) || isDevelopmentOrigin(origin)) return callback(null, true);
+    return callback(new Error('Origin not allowed by CORS'));
+  },
   credentials: true,
 }));
 

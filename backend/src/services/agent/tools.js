@@ -34,7 +34,7 @@ const tools = [
       name: 'searchProducts',
       description: 'Search the live product catalog using customer requirements.',
       parameters: { type: 'object', properties: {
-        keywords: { type: 'string' }, category: { type: 'string' }, brand: { type: 'string' },
+        query: { type: 'string' }, keywords: { type: 'string' }, category: { type: 'string' }, brand: { type: 'string' },
         minPrice: { type: 'number', minimum: 0 }, maxPrice: { type: 'number', minimum: 0 },
         minRating: { type: 'number', minimum: 0, maximum: 5 }, inStock: { type: 'boolean' },
       } },
@@ -85,11 +85,12 @@ const executeTool = async (name, rawArgs, context) => {
     const query = { merchantId, active: true };
     if (args.category) query.category = new RegExp(args.category, 'i');
     if (args.brand) query.brand = new RegExp(args.brand, 'i');
-    if (args.keywords) query.$text = { $search: args.keywords };
+    const keywords = args.keywords || args.query;
+    if (keywords) query.$text = { $search: keywords };
     if (args.minPrice !== undefined || args.maxPrice !== undefined) query.price = { ...(args.minPrice !== undefined ? { $gte: args.minPrice } : {}), ...(args.maxPrice !== undefined ? { $lte: args.maxPrice } : {}) };
     if (args.minRating !== undefined) query['ratings.average'] = { $gte: args.minRating };
     if (args.inStock) query.stock = { $gt: 0 };
-    const products = await Product.find(query).sort(args.keywords ? { score: { $meta: 'textScore' } } : { createdAt: -1 }).limit(20).lean();
+    const products = await Product.find(query).sort(keywords ? { score: { $meta: 'textScore' } } : { createdAt: -1 }).limit(20).lean();
     return { products: products.map(productView), count: products.length };
   }
   if (name === 'getProductDetails') {

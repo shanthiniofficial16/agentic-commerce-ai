@@ -1,12 +1,13 @@
 const mongoose = require('mongoose');
 const Conversation = require('../models/Conversation');
 const Merchant = require('../models/Merchant');
-const Product = require('../models/Product');
 const { runAgent } = require('../services/agent/agentService');
 
 const chat = async (req, res) => {
   try {
     const { message, sessionId, merchantId } = req.body;
+    console.log('[Agent] Request received');
+    console.log(`[Agent] User message: ${typeof message === 'string' ? message : '<invalid>'}`);
 
     if (!message || typeof message !== 'string' || !message.trim()) {
       return res.status(400).json({
@@ -54,7 +55,15 @@ const chat = async (req, res) => {
     });
 
     conversation.messages.push({ role: 'USER', content: message.trim() });
-    conversation.messages.push({ role: 'AGENT', content: result.text, metadata: { provider: 'openrouter', model: process.env.OPENROUTER_MODEL } });
+    conversation.messages.push({
+      role: 'AGENT',
+      content: result.text,
+      metadata: {
+        provider: 'openrouter',
+        model: process.env.OPENROUTER_MODEL,
+        products: result.products.map((product) => ({ id: product.id, name: product.name })),
+      },
+    });
     await conversation.save();
 
     return res.json({
