@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 const Conversation = require('../models/Conversation');
 const Merchant = require('../models/Merchant');
 const Product = require('../models/Product');
-const { generateAgentReply } = require('../services/gemini.service');
+const { generateAgentReply } = require('../services/llm.service');
 
 const chat = async (req, res) => {
   try {
@@ -58,7 +58,7 @@ const chat = async (req, res) => {
     });
 
     conversation.messages.push({ role: 'USER', content: message.trim() });
-    conversation.messages.push({ role: 'AGENT', content: reply, metadata: { provider: 'gemini', model: process.env.AI_MODEL || 'gemini-3.6-flash' } });
+    conversation.messages.push({ role: 'AGENT', content: reply, metadata: { provider: 'openrouter', model: process.env.OPENROUTER_MODEL } });
     await conversation.save();
 
     return res.json({
