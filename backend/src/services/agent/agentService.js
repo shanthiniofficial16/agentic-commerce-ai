@@ -15,8 +15,18 @@ const requiredToolFor = (message) => {
 };
 
 const runAgent = async ({ message, history = [], context }) => {
+  const currentProduct = context.currentProduct ? {
+    id: context.currentProduct._id.toString(),
+    name: context.currentProduct.name,
+    brand: context.currentProduct.brand,
+    category: context.currentProduct.category,
+    price: context.currentProduct.price,
+    currency: context.currentProduct.currency,
+    description: context.currentProduct.shortDescription || context.currentProduct.description,
+    stock: context.currentProduct.stock,
+  } : null;
   const messages = [
-    { role: 'system', content: SYSTEM_PROMPT },
+    { role: 'system', content: `${SYSTEM_PROMPT}${currentProduct ? `\nThe customer is currently viewing this real catalog product: ${JSON.stringify(currentProduct)}` : ''}` },
     ...history.map((item) => ({
       role: item.role === 'AGENT' ? 'assistant' : 'user',
       content: item.metadata?.products?.length

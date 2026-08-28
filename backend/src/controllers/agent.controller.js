@@ -1,11 +1,12 @@
 const mongoose = require('mongoose');
 const Conversation = require('../models/Conversation');
 const Merchant = require('../models/Merchant');
+const Product = require('../models/Product');
 const { runAgent } = require('../services/agent/agentService');
 
 const chat = async (req, res) => {
   try {
-    const { message, sessionId, merchantId } = req.body;
+    const { message, sessionId, merchantId, currentProductId } = req.body;
     console.log('[Agent] Request received');
     console.log(`[Agent] User message: ${typeof message === 'string' ? message : '<invalid>'}`);
 
@@ -20,6 +21,13 @@ const chat = async (req, res) => {
       return res.status(400).json({
         success: false,
         error: { code: 'VALIDATION_ERROR', message: 'merchantId must be valid' },
+      });
+    }
+
+    if (currentProductId && !mongoose.isValidObjectId(currentProductId)) {
+      return res.status(400).json({
+        success: false,
+        error: { code: 'VALIDATION_ERROR', message: 'currentProductId must be valid' },
       });
     }
 
@@ -48,10 +56,16 @@ const chat = async (req, res) => {
       });
     }
 
+    const currentProduct = currentProductId
+      ? await Product.findOne({ _id: currentProductId, merchantId: merchant._id, active: true })
+        .select('name brand category price currency shortDescription description stock ratings images')
+        .lean()
+      : null;
+
     const result = await runAgent({
       message: message.trim(),
       history: conversation.messages.slice(-12),
-      context: { userId: req.userId, merchantId: merchant._id },
+      context: { userId: req.userId, merchantId: merchant._id, currentProduct },
     });
 
     conversation.messages.push({ role: 'USER', content: message.trim() });
