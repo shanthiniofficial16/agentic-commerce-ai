@@ -2,6 +2,31 @@ const { generateCompletion } = require('../openrouter.provider');
 const { SYSTEM_PROMPT } = require('./prompts');
 const { tools, executeTool } = require('./tools');
 
+const friendlyFieldLabel = (field) => {
+  const labels = {
+    fullName: 'full name',
+    phone: 'phone number',
+    email: 'email address',
+    address: 'delivery address',
+    street: 'street address',
+    city: 'city',
+    state: 'state',
+    pincode: 'pincode',
+  };
+  return labels[field] || field;
+};
+
+const normalizeProductQuery = (message) => message.replace(/\b(i want to buy|i want|buy|purchase|order|please|the|a|an)\b/gi, ' ').replace(/\s+/g, ' ').trim();
+
+const pickBestProduct = (products, message) => {
+  const normalizedMessage = normalizeProductQuery(message).toLowerCase();
+  if (!products?.length) return null;
+  return products.find((product) => {
+    const haystack = `${product.name} ${product.brand || ''} ${product.category || ''}`.toLowerCase();
+    return haystack.includes(normalizedMessage) || normalizedMessage.includes(haystack);
+  }) || products[0];
+};
+
 const requiredToolFor = (message) => {
   const text = message.toLowerCase();
   if (/\b(in stock|stock|available|availability)\b/.test(text)) return 'checkInventory';
@@ -26,6 +51,64 @@ const runAgent = async ({ message, history = [], context }) => {
     description: context.currentProduct.shortDescription || context.currentProduct.description,
     stock: context.currentProduct.stock,
   } : null;
+
+  if (isOrderRequest(message)) {
+    const resolvedProduct = currentProduct || (() => {
+      const previousProduct = [...history].reverse().find((item) => item.metadata?.products?.length)?.metadata.products[0];
+      return previousProduct ? { id: previousProduct.id, name: previousProduct.name } : null;
+    })();
+
+    if (!resolvedProduct && message) {
+      const searchResult = await executeTool('searchProducts', { query: message, keywords: normalizeProductQuery(message) }, context);
+      const matchedProduct = pickBestProduct(searchResult.products, message);
+      if (matchedProduct) {
+        const prepared = await executeTool('prepareOrder', { productId: matchedProduct.id, quantity: 1 }, context);
+        context.pendingOrder = prepared;
+        if (prepared.state === 'AWAITING_APPROVAL') {
+          const profile = prepared.profile || {};
+          const deliveryLine = [profile.fullName, profile.address || [profile.street, profile.building, profile.landmark].filter(Boolean).join(', '), profile.city && profile.state ? `${profile.city}, ${profile.state}` : profile.city || profile.state, profile.pincode, profile.phone].filter(Boolean).join('\n');
+          return {
+            text: `${prepared.product.name} — ${prepared.product.currency || '₹'}${prepared.total || prepared.product.price}\n\nDelivery details:\n${deliveryLine}\n\nDo you want to confirm your order? Yes / No`,
+            products: searchResult.products,
+            pendingOrder: prepared,
+          };
+        }
+        if (prepared.state === 'PROFILE_REQUIRED') {
+          const missing = prepared.requiredFields || [];
+          const askFor = missing[0];
+          return {
+            text: `I need your ${friendlyFieldLabel(askFor)} to complete this order before checkout.`,
+            products: searchResult.products,
+            pendingOrder: prepared,
+          };
+        }
+      }
+    }
+
+    if (resolvedProduct && resolvedProduct.id) {
+      const prepared = await executeTool('prepareOrder', { productId: resolvedProduct.id, quantity: 1 }, context);
+      context.pendingOrder = prepared;
+      if (prepared.state === 'AWAITING_APPROVAL') {
+        const profile = prepared.profile || {};
+        const deliveryLine = [profile.fullName, profile.address || [profile.street, profile.building, profile.landmark].filter(Boolean).join(', '), profile.city && profile.state ? `${profile.city}, ${profile.state}` : profile.city || profile.state, profile.pincode, profile.phone].filter(Boolean).join('\n');
+        return {
+          text: `${prepared.product.name} — ${prepared.product.currency || '₹'}${prepared.total || prepared.product.price}\n\nDelivery details:\n${deliveryLine}\n\nDo you want to confirm your order? Yes / No`,
+          products: [],
+          pendingOrder: prepared,
+        };
+      }
+      if (prepared.state === 'PROFILE_REQUIRED') {
+        const missing = prepared.requiredFields || [];
+        const askFor = missing[0];
+        return {
+          text: `I need your ${friendlyFieldLabel(askFor)} to complete this order before checkout.`,
+          products: [],
+          pendingOrder: prepared,
+        };
+      }
+    }
+  }
+
   const messages = [
     { role: 'system', content: `${SYSTEM_PROMPT}${currentProduct ? `\nThe customer is currently viewing this real catalog product: ${JSON.stringify(currentProduct)}` : ''}` },
     ...history.map((item) => ({
