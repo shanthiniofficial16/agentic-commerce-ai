@@ -43,6 +43,16 @@ export async function removeFromCart(productId, merchantId) {
   return response.data.data.cart
 }
 
+export async function getUserProfile() {
+  const response = await api.get('/api/auth/profile')
+  return response.data.data
+}
+
+export async function updateUserProfile(profile) {
+  const response = await api.put('/api/auth/profile', profile)
+  return response.data.data
+}
+
 export async function sendAgentMessage(message, sessionId, merchantId, currentProductId) {
   const response = await api.post('/api/agent/chat', { message, sessionId, merchantId, currentProductId })
   return response.data.data

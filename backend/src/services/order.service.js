@@ -1,19 +1,39 @@
 const mongoose = require('mongoose');
-const CustomerProfile = require('../models/CustomerProfile');
+const User = require('../models/User');
 const Order = require('../models/Order');
 const Product = require('../models/Product');
 
-const profileFields = ['fullName', 'phone', 'email', 'address', 'city', 'state', 'pincode'];
+const profileFields = ['fullName', 'phone', 'email', 'street', 'city', 'state', 'pincode'];
+const normalizeProfile = (value = {}) => {
+  const profile = { ...value };
+  const address = [profile.street || profile.address, profile.building, profile.landmark].filter(Boolean).join(', ');
+  profile.fullName = (profile.fullName || '').trim();
+  profile.phone = (profile.phone || '').trim();
+  profile.email = (profile.email || '').trim();
+  profile.street = (profile.street || '').trim();
+  profile.building = (profile.building || '').trim();
+  profile.landmark = (profile.landmark || '').trim();
+  profile.city = (profile.city || '').trim();
+  profile.state = (profile.state || '').trim();
+  profile.pincode = (profile.pincode || '').trim();
+  profile.address = address;
+  return profile;
+};
 const validateProfile = (value) => {
-  const missing = profileFields.filter((field) => !value?.[field]?.toString().trim());
+  const normalized = normalizeProfile(value || {});
+  const missing = profileFields.filter((field) => !normalized?.[field]?.toString().trim());
   if (missing.length) return `Missing required details: ${missing.join(', ')}`;
-  if (!/^[6-9]\d{9}$/.test(value.phone)) return 'Please provide a valid 10-digit Indian mobile number';
-  if (!/^\S+@\S+\.\S+$/.test(value.email)) return 'Please provide a valid email address';
-  if (!/^\d{6}$/.test(value.pincode)) return 'Please provide a valid 6-digit pincode';
+  if (!/^[6-9]\d{9}$/.test(normalized.phone)) return 'Please provide a valid 10-digit Indian mobile number';
+  if (!/^\S+@\S+\.\S+$/.test(normalized.email)) return 'Please provide a valid email address';
+  if (!/^\d{6}$/.test(normalized.pincode)) return 'Please provide a valid 6-digit pincode';
   return null;
 };
 
-const getProfile = (userId) => CustomerProfile.findOne({ userId }).lean();
+const getProfile = async (userId) => {
+  const user = await User.findById(userId).lean();
+  if (!user) return null;
+  return normalizeProfile(User.buildCustomerProfile(user));
+};
 const profileStatus = (profile) => ({
   profileExists: Boolean(profile),
   profileComplete: Boolean(profile && !validateProfile(profile)),
@@ -26,11 +46,32 @@ const profileStatus = (profile) => ({
 });
 
 const saveProfile = async (userId, input) => {
-  const existing = await getProfile(userId);
-  const profile = { ...existing, ...input, userId };
-  const error = validateProfile(profile);
+  const user = await User.findById(userId);
+  if (!user) throw Object.assign(new Error('User not found'), { code: 'USER_NOT_FOUND', status: 404 });
+
+  const profileInput = normalizeProfile({ ...(user.profile || {}), ...(input || {}) });
+  if (profileInput.address && !profileInput.street) {
+    const [streetValue, buildingValue, landmarkValue] = profileInput.address.split(',').map((part) => part.trim());
+    profileInput.street = streetValue || '';
+    profileInput.building = buildingValue || '';
+    profileInput.landmark = landmarkValue || '';
+  }
+
+  const nextProfile = {
+    ...user.profile,
+    ...profileInput,
+    fullName: profileInput.fullName || user.name,
+    email: profileInput.email || user.email,
+  };
+
+  const error = validateProfile(nextProfile);
   if (error) throw Object.assign(new Error(error), { code: 'PROFILE_INVALID', status: 400 });
-  return CustomerProfile.findOneAndUpdate({ userId }, profile, { new: true, upsert: true, runValidators: true }).lean();
+
+  user.profile = { ...user.profile, ...nextProfile };
+  user.name = nextProfile.fullName || user.name;
+  user.email = nextProfile.email || user.email;
+  await user.save();
+  return normalizeProfile(User.buildCustomerProfile(user));
 };
 
 const prepareOrder = async ({ userId, merchantId, productId, quantity = 1 }) => {
