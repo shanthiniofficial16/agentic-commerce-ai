@@ -40,6 +40,94 @@ const requiredToolFor = (message) => {
 };
 const isOrderRequest = (message) => /\b(buy|proceed|place|confirm|order)\b/.test(message.toLowerCase());
 
+const normalizeCurrencyNumber = (value, suffix) => {
+  if (value === undefined || value === null || value === '') return null;
+  const numeric = Number(String(value).replace(/[₹?,\s]/g, ''));
+  if (!Number.isFinite(numeric)) return null;
+  return /k$/i.test(String(suffix || '')) || /k\b/i.test(String(value || '')) ? numeric * 1000 : numeric;
+};
+
+const parseBudgetConstraints = (message) => {
+  const text = message.trim();
+  if (!text) return null;
+
+  const normalized = text.toLowerCase();
+  const categoryMap = {
+    laptop: 'laptop',
+    laptops: 'laptop',
+    phone: 'phone',
+    phones: 'phone',
+    mobile: 'phone',
+    mobiles: 'phone',
+    headphone: 'headphone',
+    headphones: 'headphone',
+    earbud: 'headphone',
+    earbuds: 'headphone',
+    earphone: 'headphone',
+    earphones: 'headphone',
+    tablet: 'tablet',
+    tablets: 'tablet',
+    watch: 'watch',
+    watches: 'watch',
+  };
+
+  const category = Object.keys(categoryMap).find((keyword) => normalized.includes(keyword)) || null;
+  const result = {
+    category: category ? categoryMap[category] : null,
+    minPrice: null,
+    maxPrice: null,
+    sort: null,
+    inStock: /\b(in stock|available|availability)\b/.test(normalized),
+  };
+
+  const betweenMatch = text.match(/between\s*[₹?]?\s*(\d+(?:,\d{3})*(?:\.\d+)?)\s*(k)?\s*(?:and|to)\s*[₹?]?\s*(\d+(?:,\d{3})*(?:\.\d+)?)\s*(k)?/i);
+  if (betweenMatch) {
+    result.minPrice = normalizeCurrencyNumber(betweenMatch[1], betweenMatch[2]);
+    result.maxPrice = normalizeCurrencyNumber(betweenMatch[3], betweenMatch[4]);
+    return result;
+  }
+
+  const explicitMin = text.match(/(?:above|over|more than|from|starting at|starting from|priced from)\s*[₹?]?\s*(\d+(?:,\d{3})*(?:\.\d+)?)\s*(k)?/i);
+  const explicitMax = text.match(/(?:under|below|less than|upto|up to|not more than|no more than|within|at most|under budget|budget of)\s*[₹?]?\s*(\d+(?:,\d{3})*(?:\.\d+)?)\s*(k)?/i);
+  const aroundMatch = text.match(/(?:around|approximately|roughly|about)\s*[₹?]?\s*(\d+(?:,\d{3})*(?:\.\d+)?)\s*(k)?/i);
+
+  if (explicitMin) result.minPrice = normalizeCurrencyNumber(explicitMin[1], explicitMin[2]);
+  if (explicitMax) result.maxPrice = normalizeCurrencyNumber(explicitMax[1], explicitMax[2]);
+
+  if (aroundMatch) {
+    const aroundPrice = normalizeCurrencyNumber(aroundMatch[1], aroundMatch[2]);
+    if (aroundPrice !== null) {
+      result.minPrice = aroundPrice * 0.85;
+      result.maxPrice = aroundPrice * 1.15;
+    }
+  }
+
+  if (/\bcheapest\b|\blowest price\b|\blowest priced\b/.test(normalized)) result.sort = 'cheapest';
+  if (/\bbest\b|\btop rated\b|\bhighest rated\b|\bmost popular\b/.test(normalized)) result.sort = 'best';
+
+  return result;
+};
+
+const formatBudgetText = (result) => {
+  if (!result) return 'products';
+  const categoryLabel = result.category ? `${result.category}s` : 'products';
+  if (result.maxPrice && result.minPrice) {
+    return `${categoryLabel} between ₹${Number(result.minPrice).toLocaleString('en-IN')} and ₹${Number(result.maxPrice).toLocaleString('en-IN')}`;
+  }
+  if (result.maxPrice) {
+    return `${categoryLabel} under ₹${Number(result.maxPrice).toLocaleString('en-IN')}`;
+  }
+  if (result.minPrice) {
+    return `${categoryLabel} above ₹${Number(result.minPrice).toLocaleString('en-IN')}`;
+  }
+  return categoryLabel;
+};
+
+const isBudgetSearch = (message) => {
+  const lower = message.toLowerCase();
+  return /(laptop|phone|phones|mobile|mobiles|headphone|earbuds|earphone|tablet|watch|budget|under|below|between|cheapest|best|around|approximately|roughly)/.test(lower);
+};
+
 const runAgent = async ({ message, history = [], context }) => {
   const currentProduct = context.currentProduct ? {
     id: context.currentProduct._id.toString(),
@@ -51,6 +139,48 @@ const runAgent = async ({ message, history = [], context }) => {
     description: context.currentProduct.shortDescription || context.currentProduct.description,
     stock: context.currentProduct.stock,
   } : null;
+
+  const budgetSearch = parseBudgetConstraints(message);
+  if (isBudgetSearch(message)) {
+    const searchArgs = {
+      query: message,
+      keywords: normalizeProductQuery(message),
+      category: budgetSearch?.category || undefined,
+      minPrice: budgetSearch?.minPrice ?? undefined,
+      maxPrice: budgetSearch?.maxPrice ?? undefined,
+      inStock: budgetSearch?.inStock ? true : undefined,
+    };
+
+    const searchResult = await executeTool('searchProducts', searchArgs, context);
+    let products = Array.isArray(searchResult?.products) ? [...searchResult.products] : [];
+
+    if (products.length && (budgetSearch?.sort === 'cheapest' || /cheapest|lowest price/.test(message.toLowerCase()))) {
+      products.sort((a, b) => Number(a.price) - Number(b.price));
+    }
+    if (products.length && (budgetSearch?.sort === 'best' || /best|top rated|highest rated/.test(message.toLowerCase()))) {
+      products.sort((a, b) => (Number(b.rating || 0) - Number(a.rating || 0)) || (Number(a.price) - Number(b.price)));
+    }
+
+    if (!products.length) {
+      return {
+        text: `I couldn’t find any ${formatBudgetText(budgetSearch)} in the current catalog. Try widening the budget or a different product type.`,
+        products: [],
+        pendingOrder: null,
+      };
+    }
+
+    const sample = products.slice(0, 5);
+    const lines = sample.map((product) => {
+      const stockText = Number(product.stock) > 0 ? `Available (${product.stock} in stock)` : 'Out of stock';
+      return `• ${product.name} — ₹${Number(product.price).toLocaleString('en-IN')} — ${stockText} — ${product.specifications?.processor || product.specifications?.model || product.category || 'Product'}`;
+    });
+
+    return {
+      text: `Here are the available ${formatBudgetText(budgetSearch)}:\n${lines.join('\n')}`,
+      products: sample,
+      pendingOrder: null,
+    };
+  }
 
   if (isOrderRequest(message)) {
     const resolvedProduct = currentProduct || (() => {
