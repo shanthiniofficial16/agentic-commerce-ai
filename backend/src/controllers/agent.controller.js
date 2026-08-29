@@ -3,10 +3,10 @@ const Conversation = require('../models/Conversation');
 const Merchant = require('../models/Merchant');
 const Product = require('../models/Product');
 const { runAgent } = require('../services/agent/agentService');
-const { createOrder } = require('../services/order.service');
+const { createOrder, createPendingPayment, finalizeVerifiedCheckout } = require('../services/order.service');
 
-const isApproval = (message) => /^(yes|confirm|confirmed|place it|place order|proceed|go ahead|yes,? place( the)? order)$/i.test(message.trim());
-const isCancellation = (message) => /^(no|cancel|cancel order|not now|maybe later|don't place it|do not place it)$/i.test(message.trim());
+const isApproval = (message) => /^(yes|confirm|confirmed|place it|place order|proceed|go ahead|buy it|yes,? place( the)? order)$/i.test(message.trim());
+const isCancellation = (message) => /^(no|cancel|cancel order|not now|maybe later|don't place it|do not place it|don't buy|stop)$/i.test(message.trim());
 
 const chat = async (req, res) => {
   try {
@@ -76,11 +76,39 @@ const chat = async (req, res) => {
         await conversation.save();
         return res.json({ success: true, data: { message: 'The order was cancelled.', sessionId: conversation.sessionId, cancelled: true } });
       }
-      const order = await createOrder({ userId: req.userId, merchantId: conversation.merchantId, pendingOrder: conversation.pendingOrder, idempotencyKey: `agent:${req.userId}:${conversation.sessionId}` });
+
+      const payment = await createPendingPayment({
+        userId: req.userId,
+        merchantId: conversation.merchantId,
+        pendingOrder: conversation.pendingOrder,
+        idempotencyKey: `agent:${req.userId}:${conversation.sessionId}`,
+      });
+
+      if (payment.status === 'SUCCESS' && payment.orderId) {
+        const completed = await finalizeVerifiedCheckout({
+          userId: req.userId,
+          merchantId: conversation.merchantId,
+          pendingOrder: conversation.pendingOrder,
+          idempotencyKey: `agent:${req.userId}:${conversation.sessionId}`,
+        });
+        conversation.orderState = 'ORDER_CREATED';
+        conversation.pendingOrder = { createdOrder: completed.order };
+        await conversation.save();
+        return res.json({ success: true, data: { message: `Order placed successfully! 🎉\n\nOrder ID: #${completed.order.id}\nProduct: ${completed.order.productName}\nAmount: ₹${completed.order.total}\nPayment: Successful\nDelivery to: ${completed.order.delivery?.address || completed.order.delivery?.city || 'Saved delivery address'}\n\nYou can track your order from your Orders dashboard.`, order: completed.order, sessionId: conversation.sessionId } });
+      }
+
+      const order = await createOrder({
+        userId: req.userId,
+        merchantId: conversation.merchantId,
+        pendingOrder: conversation.pendingOrder,
+        idempotencyKey: `agent:${req.userId}:${conversation.sessionId}`,
+        paymentId: payment.paymentId,
+        paymentStatus: 'PENDING_PAYMENT',
+      });
       conversation.orderState = 'ORDER_CREATED';
       conversation.pendingOrder = { createdOrder: order };
       await conversation.save();
-      return res.json({ success: true, data: { message: `Order ${order.id} placed successfully.`, order, sessionId: conversation.sessionId } });
+      return res.json({ success: true, data: { message: `Payment is still pending. Order has been queued for processing once payment is verified.`, order, sessionId: conversation.sessionId } });
     }
 
     const result = await runAgent({

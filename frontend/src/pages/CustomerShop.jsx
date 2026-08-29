@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { Bot, Heart, Menu, Search, ShoppingBag, User, X } from 'lucide-react'
-import { addToCart, getCart, getUserProfile, updateUserProfile } from '../services/api'
+import { addToCart, getCart, getOrders, getUserProfile, updateUserProfile } from '../services/api'
 import { useAuth } from '../hooks/useAuth'
 import { Assistant, CartPage, Checkout, ProductDetails, Products, ShopHome, SimplePage } from './ShopPages'
 
@@ -102,7 +102,7 @@ export default function CustomerShop() {
   return (
     <div className="shop-app">
       <header className="shop-nav"><div className="nav-inner"><button className="mobile-menu icon-button" onClick={() => setMenuOpen(!menuOpen)} aria-label="Open menu">{menuOpen ? <X /> : <Menu />}</button><Link to="/shop" className="brand"><span><Bot size={21} /></span> AI Commerce</Link><nav className={`main-nav ${menuOpen ? 'open' : ''}`}><Link to="/shop">Home</Link><Link to="/shop/products">Products</Link><Link to="/shop/products?category=Electronics">Categories</Link><Link to="/shop/ai-assistant">AI Assistant</Link><Link to="/shop/deals">Deals</Link></nav><div className="nav-actions"><Link to="/shop/products" className="nav-search"><Search size={18} /><span>Search products</span></Link><Link className="icon-button" to="/shop/wishlist" aria-label="Wishlist"><Heart size={19} /></Link><Link className="cart-button" to="/shop/cart" aria-label="Cart"><ShoppingBag size={19} /><b>{cart?.items?.length || 0}</b></Link><Link to="/shop/profile" className="profile-menu"><User size={17} /><span>{auth?.name?.split(' ')[0] || 'Account'}</span></Link><button className="profile-logout" onClick={handleLogout}>Log out</button></div></div></header>
-      <main><Routes><Route index element={<ShopHome onAdd={handleAdd} />} /><Route path="products" element={<Products onAdd={handleAdd} />} /><Route path="products/:id" element={<ProductDetails onAdd={handleAdd} />} /><Route path="cart" element={<CartPage cart={cart} setCart={setCart} onAdd={handleAdd} />} /><Route path="ai-assistant" element={<Assistant onAdd={handleAdd} />} /><Route path="checkout" element={<Checkout cart={cart} />} /><Route path="orders" element={<SimplePage eyebrow="Your journey" title="Orders" />} /><Route path="wishlist" element={<SimplePage eyebrow="Saved for later" title="Wishlist" />} /><Route path="profile" element={<ProfilePage />} /><Route path="deals" element={<SimplePage eyebrow="Limited time" title="Deals" />} /></Routes></main>
+      <main><Routes><Route index element={<ShopHome onAdd={handleAdd} />} /><Route path="products" element={<Products onAdd={handleAdd} />} /><Route path="products/:id" element={<ProductDetails onAdd={handleAdd} />} /><Route path="cart" element={<CartPage cart={cart} setCart={setCart} onAdd={handleAdd} />} /><Route path="ai-assistant" element={<Assistant onAdd={handleAdd} />} /><Route path="checkout" element={<Checkout cart={cart} />} /><Route path="orders" element={<OrderDashboard />} /><Route path="wishlist" element={<SimplePage eyebrow="Saved for later" title="Wishlist" />} /><Route path="profile" element={<ProfilePage />} /><Route path="deals" element={<SimplePage eyebrow="Limited time" title="Deals" />} /></Routes></main>
       {toast && <div className="toast"><span>✓</span>{toast}</div>}
     </div>
   )

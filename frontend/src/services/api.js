@@ -68,4 +68,9 @@ export async function cancelAgentOrder(sessionId) {
   return response.data.data
 }
 
+export async function getOrders() {
+  const response = await api.get('/api/orders')
+  return response.data.data.orders
+}
+
 export default api
