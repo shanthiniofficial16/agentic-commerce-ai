@@ -55,17 +55,27 @@ export async function updateUserProfile(profile) {
 
 export async function sendAgentMessage(message, sessionId, merchantId, currentProductId) {
   const response = await api.post('/api/agent/chat', { message, sessionId, merchantId, currentProductId })
-  return response.data.data
+  const payload = response?.data ?? {}
+  const data = payload.data ?? {}
+
+  if (!data || typeof data !== 'object') {
+    throw new Error('Agent response was empty or invalid')
+  }
+
+  return data
 }
 
 export async function confirmAgentOrder(sessionId) {
   const response = await api.post('/api/agent/order/confirm', { sessionId })
-  return response.data.data.order
+  const payload = response?.data ?? {}
+  const data = payload.data ?? {}
+  return data.order
 }
 
 export async function cancelAgentOrder(sessionId) {
   const response = await api.post('/api/agent/order/cancel', { sessionId })
-  return response.data.data
+  const payload = response?.data ?? {}
+  return payload.data ?? {}
 }
 
 export async function getOrders() {

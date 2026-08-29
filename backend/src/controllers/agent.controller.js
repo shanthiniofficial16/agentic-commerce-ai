@@ -139,7 +139,16 @@ const chat = async (req, res) => {
       data: { message: result.text, products: result.products, orderPreview: result.pendingOrder?.state === 'AWAITING_APPROVAL' ? result.pendingOrder : null, profileRequired: result.pendingOrder?.state === 'PROFILE_REQUIRED' ? result.pendingOrder.requiredFields : null, sessionId: conversation.sessionId },
     });
   } catch (error) {
-    console.error('Agent chat error:', error.message);
+    console.error('[Agent] chat request failed', {
+      userId: req.userId,
+      message: typeof message === 'string' ? message.slice(0, 200) : message,
+      sessionId,
+      merchantId,
+      currentProductId,
+      code: error.code,
+      status: error.status,
+      stack: error.stack,
+    });
     return res.status(error.status || 500).json({
       success: false,
       error: { code: error.code || 'AGENT_FAILED', message: error.message || 'Unable to process agent request' },

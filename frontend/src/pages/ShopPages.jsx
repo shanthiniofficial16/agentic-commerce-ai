@@ -16,11 +16,16 @@ export function Assistant({ onAdd }) {
     setBusy(true)
     try {
       const result = await sendAgentMessage(text, sessionId || undefined, undefined, contextProduct?._id)
-      setSessionId(result.sessionId)
-        setOrderPreview(result.orderPreview || null)
-      setMessages((items) => [...items, { role: 'agent', text: result.message, products: result.products || [] }])
+      const nextSessionId = result?.sessionId || sessionId || undefined
+      if (nextSessionId) setSessionId(nextSessionId)
+      setOrderPreview(result?.orderPreview || null)
+      setMessages((items) => [...items, {
+        role: 'agent',
+        text: typeof result?.message === 'string' && result.message.trim() ? result.message : 'I could not generate a response for that request.',
+        products: Array.isArray(result?.products) ? result.products : [],
+      }])
     } catch (error) {
-      setMessages((items) => [...items, { role: 'agent', text: error.response?.data?.error?.message || 'Sorry, I could not connect to the shopping assistant right now.' }])
+      setMessages((items) => [...items, { role: 'agent', text: error.response?.data?.error?.message || error.message || 'Sorry, I could not connect to the shopping assistant right now.' }])
     } finally { setBusy(false) }
   }
     const placeOrder = async () => { setBusy(true); try { const order = await confirmAgentOrder(sessionId); setOrderPreview(null); setMessages((items) => [...items, { role: 'agent', text: `Your order ${order.id} has been placed successfully. Total: ${money(order.total)}. Status: ${order.status}.` }]) } catch (error) { setMessages((items) => [...items, { role: 'agent', text: error.response?.data?.error?.message || 'I could not place that order.' }]) } finally { setBusy(false) } }
