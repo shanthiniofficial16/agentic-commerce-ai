@@ -153,6 +153,13 @@ const isComplementaryRequest = (message) => {
   return /\b(suggest|recommend|matching|match|complement|accessories|go well with|goes well with|for this product|for this laptop|for this phone|for this saree)\b/.test(lower) || /\b(accessory|accessories|ring|rings|bracelet|bracelets|earring|earrings|mouse|bag|headphones)\b/.test(lower);
 };
 
+const stripComplementaryClauses = (message) => {
+  let cleaned = message;
+  cleaned = cleaned.replace(/\b(?:and)\b\s*(?:.*?\b(?:recommend|suggest|matching|match|complement|accessory|accessories|jewellery|jewelry|mouse|bag|headphone|headphones|bracelet|bracelets|ring|rings|earring|earrings)\b.*$)/i, '');
+  cleaned = cleaned.replace(/\b(?:recommend|suggest|matching|match|complement|accessory|accessories|jewellery|jewelry|mouse|bag|headphone|headphones|bracelet|bracelets|ring|rings|earring|earrings|what accessories do i need|some accessories)\b.*$/gi, '');
+  return cleaned.replace(/\s+/g, ' ').trim();
+};
+
 const extractRequestedAccessoryTerms = (message) => {
   const text = message.toLowerCase();
   const terms = Array.from(new Set((text.match(/\b(mouse|bag|headphone|headphones|earphone|earphones|ring|rings|bracelet|bracelets|earring|earrings|charger|case|keyboard|hub|speaker|travel|accessory|accessories)\b/g) || []).map((term) => term.replace(/s$/, ''))));
@@ -366,6 +373,63 @@ const resolveSpecificProductRequest = async ({ message, history = [], context })
   };
 };
 
+const resolveCombinedShoppingIntent = async ({ message, history = [], context }) => {
+  if (!isComplementaryRequest(message)) return null;
+
+  const cleanedMessage = stripComplementaryClauses(message);
+  if (!cleanedMessage || cleanedMessage.length < 2) return null;
+
+  const budgetSearch = parseBudgetConstraints(cleanedMessage);
+  const queryText = normalizeProductQuery(cleanedMessage) || cleanedMessage;
+  const searchArgs = {
+    query: queryText,
+    keywords: queryText,
+    ...(budgetSearch?.category ? { category: budgetSearch.category } : {}),
+    ...(budgetSearch?.minPrice !== null && budgetSearch?.minPrice !== undefined ? { minPrice: budgetSearch.minPrice } : {}),
+    ...(budgetSearch?.maxPrice !== null && budgetSearch?.maxPrice !== undefined ? { maxPrice: budgetSearch.maxPrice } : {}),
+    ...(budgetSearch?.inStock ? { inStock: true } : {}),
+  };
+
+  const searchResult = await executeTool('searchProducts', searchArgs, context);
+  let products = Array.isArray(searchResult?.products) ? [...searchResult.products] : [];
+
+  if (!products.length) {
+    const previousProduct = getPreviousProductFromContext(history, context);
+    if (previousProduct?.id) {
+      const productResult = await executeTool('getProductDetails', { productId: previousProduct.id }, context);
+      products = productResult?.product ? [productResult.product] : [];
+    }
+  }
+
+  if (!products.length) return null;
+
+  const mainProduct = products[0];
+  const complementary = await resolveComplementaryProducts({
+    message,
+    history,
+    context: { ...context, currentProduct: mainProduct },
+  });
+
+  const primaryLines = products.slice(0, 5).map((product) => {
+    const stockText = Number(product.stock) > 0 ? `Available (${product.stock} in stock)` : 'Out of stock';
+    return `• ${product.name} — ₹${Number(product.price).toLocaleString('en-IN')} — ${stockText}`;
+  });
+
+  const primaryText = budgetSearch
+    ? `Here are the available ${formatBudgetText(budgetSearch)}:\n${primaryLines.join('\n')}`
+    : `I found a matching product:\n${primaryLines.join('\n')}`;
+
+  const text = complementary?.products?.length
+    ? `${primaryText}\n\n${complementary.text}`
+    : primaryText;
+
+  return {
+    text,
+    products: [...products.slice(0, 5), ...(complementary?.products || [])],
+    pendingOrder: complementary?.pendingOrder || null,
+  };
+};
+
 const runAgent = async ({ message, history = [], context }) => {
   const currentProduct = context.currentProduct ? {
     id: context.currentProduct._id.toString(),
@@ -377,6 +441,11 @@ const runAgent = async ({ message, history = [], context }) => {
     description: context.currentProduct.shortDescription || context.currentProduct.description,
     stock: context.currentProduct.stock,
   } : null;
+
+  const combinedIntent = await resolveCombinedShoppingIntent({ message, history, context });
+  if (combinedIntent) {
+    return combinedIntent;
+  }
 
   const budgetSearch = parseBudgetConstraints(message);
   if (isComplementaryRequest(message)) {
