@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
+const { sanitizeErrorPayload, getUserFacingErrorMessage } = require('./utils/errorMessageMap');
 require('dotenv').config();
 
 const app = express();
@@ -81,13 +82,16 @@ app.use('/api/audit', require('./routes/audit.routes'));
 // Error handling middleware
 app.use((err, req, res, next) => {
   console.error('Error:', err);
-  
-  if (err.name === 'ValidationError') {
+
+  const code = err.code || (err.name === 'ValidationError' ? 'VALIDATION_ERROR' : 'INTERNAL_SERVER_ERROR');
+  const safe = sanitizeErrorPayload({ code, message: err.message }, getUserFacingErrorMessage(code, 'Something went wrong on our side. Please try again.'));
+
+  if (err.name === 'ValidationError' || err.status === 400) {
     return res.status(400).json({
       success: false,
       error: {
-        code: 'VALIDATION_ERROR',
-        message: err.message,
+        code,
+        message: safe.message,
       },
     });
   }
@@ -95,8 +99,8 @@ app.use((err, req, res, next) => {
   res.status(err.status || 500).json({
     success: false,
     error: {
-      code: err.code || 'INTERNAL_SERVER_ERROR',
-      message: err.message || 'An unexpected error occurred',
+      code,
+      message: safe.message,
     },
   });
 });
@@ -107,7 +111,7 @@ app.use((req, res) => {
     success: false,
     error: {
       code: 'NOT_FOUND',
-      message: 'Endpoint not found',
+      message: getUserFacingErrorMessage('NOT_FOUND', 'That endpoint was not found.'),
     },
   });
 });

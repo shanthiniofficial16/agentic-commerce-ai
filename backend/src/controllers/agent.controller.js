@@ -4,6 +4,7 @@ const Merchant = require('../models/Merchant');
 const Product = require('../models/Product');
 const { runAgent } = require('../services/agent/agentService');
 const { createOrder, createPendingPayment, finalizeVerifiedCheckout } = require('../services/order.service');
+const { sanitizeErrorPayload } = require('../utils/errorMessageMap');
 
 const isApproval = (message) => /^(yes|confirm|confirmed|place it|place order|proceed|go ahead|buy it|yes,? place( the)? order)$/i.test(message.trim());
 const isCancellation = (message) => /^(no|cancel|cancel order|not now|maybe later|don't place it|do not place it|don't buy|stop)$/i.test(message.trim());
@@ -156,9 +157,10 @@ const chat = async (req, res) => {
       status: error.status,
       stack: error.stack,
     });
+    const safe = sanitizeErrorPayload(error, 'The shopping assistant could not process that request. Please try again.');
     return res.status(error.status || 500).json({
       success: false,
-      error: { code: error.code || 'AGENT_FAILED', message: error.message || 'Unable to process agent request' },
+      error: { code: error.code || 'AGENT_FAILED', message: safe.message },
     });
   }
 };
@@ -177,7 +179,8 @@ const confirmOrder = async (req, res) => {
     return res.json({ success: true, data: { order } });
   } catch (error) {
     console.error('Confirm order error:', error.message);
-    return res.status(error.status || 500).json({ success: false, error: { code: error.code || 'ORDER_FAILED', message: error.message || 'Unable to place order' } });
+    const safe = sanitizeErrorPayload(error, 'The order could not be placed right now. Please try again.');
+    return res.status(error.status || 500).json({ success: false, error: { code: error.code || 'ORDER_FAILED', message: safe.message } });
   }
 };
 

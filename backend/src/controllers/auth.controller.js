@@ -2,6 +2,7 @@ const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const Merchant = require('../models/Merchant');
 const Joi = require('joi');
+const { getUserFacingErrorMessage } = require('../utils/errorMessageMap');
 
 const customerProfileFields = {
   fullName: Joi.string().trim().min(2).required(),
@@ -155,7 +156,7 @@ const register = async (req, res) => {
     console.error('Register error:', error);
     res.status(500).json({
       success: false,
-      error: { code: 'REGISTRATION_FAILED', message: error.message },
+      error: { code: 'REGISTRATION_FAILED', message: getUserFacingErrorMessage('REGISTRATION_FAILED', 'Registration failed. Please try again.') },
     });
   }
 };
@@ -215,7 +216,7 @@ const login = async (req, res) => {
     console.error('Login error:', error);
     res.status(500).json({
       success: false,
-      error: { code: 'LOGIN_FAILED', message: error.message },
+      error: { code: 'LOGIN_FAILED', message: getUserFacingErrorMessage('LOGIN_FAILED', 'Login failed. Please try again.') },
     });
   }
 };
@@ -247,7 +248,7 @@ const me = async (req, res) => {
     console.error('Me error:', error);
     res.status(500).json({
       success: false,
-      error: { code: 'FETCH_FAILED', message: error.message },
+      error: { code: 'FETCH_FAILED', message: getUserFacingErrorMessage('FETCH_FAILED', 'We could not load that information right now. Please try again.') },
     });
   }
 };
@@ -270,7 +271,7 @@ const getProfile = async (req, res) => {
     console.error('Get profile error:', error);
     res.status(500).json({
       success: false,
-      error: { code: 'FETCH_FAILED', message: error.message },
+      error: { code: 'FETCH_FAILED', message: getUserFacingErrorMessage('FETCH_FAILED', 'We could not load that information right now. Please try again.') },
     });
   }
 };
@@ -324,7 +325,7 @@ const updateProfile = async (req, res) => {
     console.error('Update profile error:', error);
     res.status(500).json({
       success: false,
-      error: { code: 'PROFILE_UPDATE_FAILED', message: error.message },
+      error: { code: 'PROFILE_UPDATE_FAILED', message: getUserFacingErrorMessage('PROFILE_UPDATE_FAILED', 'We could not update your profile right now. Please try again.') },
     });
   }
 };
