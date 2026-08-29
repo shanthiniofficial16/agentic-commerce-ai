@@ -101,28 +101,17 @@ const parseBudgetConstraints = (message) => {
   if (!text) return null;
 
   const normalized = text.toLowerCase();
-  const categoryMap = {
-    laptop: 'laptop',
-    laptops: 'laptop',
-    phone: 'phone',
-    phones: 'phone',
-    mobile: 'phone',
-    mobiles: 'phone',
-    headphone: 'headphone',
-    headphones: 'headphone',
-    earbud: 'headphone',
-    earbuds: 'headphone',
-    earphone: 'headphone',
-    earphones: 'headphone',
-    tablet: 'tablet',
-    tablets: 'tablet',
-    watch: 'watch',
-    watches: 'watch',
-  };
+  const categoryPatterns = [
+    { value: 'laptop', regex: /\blaptops?\b/ },
+    { value: 'phone', regex: /\bphones?\b|\bmobile(s)?\b/ },
+    { value: 'headphone', regex: /\bheadphones?\b|\bearbuds?\b|\bearphones?\b/ },
+    { value: 'tablet', regex: /\btablets?\b/ },
+    { value: 'watch', regex: /\bwatches?\b/ },
+  ];
 
-  const category = Object.keys(categoryMap).find((keyword) => normalized.includes(keyword)) || null;
+  const category = categoryPatterns.find(({ regex }) => regex.test(normalized))?.value || null;
   const result = {
-    category: category ? categoryMap[category] : null,
+    category,
     minPrice: null,
     maxPrice: null,
     sort: null,
@@ -750,4 +739,9 @@ const runAgent = async ({ message, history = [], context }) => {
   throw Object.assign(new Error('Agent reached its tool-call limit'), { code: 'AI_TOOL_LIMIT', status: 502 });
 };
 
-module.exports = { runAgent };
+module.exports = {
+  runAgent,
+  parseBudgetConstraints,
+  isBudgetSearch,
+  formatBudgetText,
+};
