@@ -1,3 +1,4 @@
+const Product = require('../../models/Product');
 const { generateCompletion } = require('../openrouter.provider');
 const { SYSTEM_PROMPT } = require('./prompts');
 const { tools, executeTool } = require('./tools');
@@ -147,6 +148,110 @@ const isBudgetSearch = (message) => {
   return /(laptop|phone|phones|mobile|mobiles|headphone|earbuds|earphone|tablet|watch|budget|under|below|between|cheapest|best|around|approximately|roughly)/.test(lower);
 };
 
+const isComplementaryRequest = (message) => {
+  const lower = message.toLowerCase();
+  return /\b(suggest|recommend|matching|match|complement|accessories|go well with|goes well with|for this product|for this laptop|for this phone|for this saree)\b/.test(lower) || /\b(accessory|accessories|ring|rings|bracelet|bracelets|earring|earrings|mouse|bag|headphones)\b/.test(lower);
+};
+
+const extractRequestedAccessoryTerms = (message) => {
+  const text = message.toLowerCase();
+  const terms = Array.from(new Set((text.match(/\b(mouse|bag|headphone|headphones|earphone|earphones|ring|rings|bracelet|bracelets|earring|earrings|charger|case|keyboard|hub|speaker|travel|accessory|accessories)\b/g) || []).map((term) => term.replace(/s$/, ''))));
+  return terms;
+};
+
+const getDesiredAccessoryKeywords = (mainProduct) => {
+  const text = `${mainProduct.name || ''} ${mainProduct.category || ''} ${mainProduct.subcategory || ''} ${(mainProduct.tags || []).join(' ')}`.toLowerCase();
+  if (/laptop|notebook|ultrabook/.test(text)) return ['mouse', 'bag', 'keyboard', 'hub', 'travel', 'desk', 'accessory'];
+  if (/phone|mobile/.test(text)) return ['headphone', 'earphone', 'speaker', 'charger', 'case', 'accessory'];
+  if (/saree|dress|jewelry|ring|bracelet|earring/.test(text)) return ['ring', 'bracelet', 'earring', 'jewelry', 'accessory'];
+  if (/headphone|earphone|speaker|audio/.test(text)) return ['headphone', 'earphone', 'speaker', 'case', 'charger', 'accessory'];
+  return ['accessory', 'mouse', 'bag', 'headphone', 'ring', 'bracelet', 'earring', 'case', 'charger'];
+};
+
+const resolveComplementaryProducts = async ({ message, history = [], context }) => {
+  const previousProduct = getPreviousProductFromContext(history, context);
+  let mainProduct = previousProduct || context.currentProduct || null;
+
+  if (!mainProduct && /\b(laptop|phone|saree|headphone|mouse|bag)\b/i.test(message)) {
+    const query = message.toLowerCase();
+    const searchText = query.replace(/\b(i bought|i have|i want to buy|suggest|recommend|matching|for this|product|accessories|this|that|buy|purchase|please)\b/gi, ' ').replace(/\s+/g, ' ').trim();
+    if (searchText && !/^(product|accessory|accessories)$/i.test(searchText)) {
+      const searchResult = await executeTool('searchProducts', { query: searchText, keywords: searchText }, context);
+      const product = Array.isArray(searchResult?.products) ? searchResult.products[0] : null;
+      if (product) mainProduct = product;
+    }
+  }
+
+  if (!mainProduct) {
+    return null;
+  }
+
+  const productDetails = await executeTool('getProductDetails', { productId: mainProduct.id || mainProduct._id?.toString?.() || mainProduct._id }, context);
+  const main = productDetails.product;
+  const requestedTerms = extractRequestedAccessoryTerms(message);
+  const desiredKeywords = getDesiredAccessoryKeywords(main);
+
+  const keywordPatterns = desiredKeywords.map((keyword) => new RegExp(keyword, 'i'));
+  const query = {
+    merchantId: context.merchantId,
+    active: true,
+    _id: { $ne: main._id },
+    $and: [
+      {
+        $or: [
+          { category: 'Accessories' },
+          { category: 'Electronics', subcategory: /audio/i },
+          { subcategory: /bag|desk|travel|audio/i },
+          { name: /mouse|bag|keyboard|hub|headphone|earphone|speaker|case|charger|ring|bracelet|earring|accessory/i },
+        ]
+      }
+    ]
+  };
+
+  const candidates = await Product.find(query).limit(20).lean();
+  const scored = candidates
+    .map((product) => {
+      const haystack = `${product.name || ''} ${product.category || ''} ${product.subcategory || ''} ${(product.tags || []).join(' ')}`.toLowerCase();
+      let score = 0;
+      if (product.category === 'Accessories') score += 20;
+      if (product.category === 'Electronics' && /headphone|earphone|speaker|charger|case/i.test(product.name || '')) score += 20;
+      if (desiredKeywords.some((keyword) => haystack.includes(keyword))) score += 35;
+      if (requestedTerms.some((term) => haystack.includes(term))) score += 25;
+      if ((product.tags || []).some((tag) => desiredKeywords.includes(tag.toLowerCase()))) score += 10;
+      if (/mouse|bag|keyboard|hub|headphone|earphone|speaker|charger|case|ring|bracelet|earring/.test(product.name || '')) score += 10;
+      return { product, score };
+    })
+    .filter((entry) => entry.score >= 35)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 5);
+
+  if (!scored.length) {
+    return {
+      text: `I couldn’t find any complementary products in the current catalog for ${main.name}.`,
+      products: [],
+      pendingOrder: null,
+    };
+  }
+
+  const selected = scored.map((entry) => entry.product).filter((product) => product && product.name);
+  const lines = selected.map((product) => `• ${product.name} — ₹${Number(product.price).toLocaleString('en-IN')} — ${Number(product.stock) > 0 ? `Available (${product.stock} in stock)` : 'Currently unavailable'}`);
+
+  return {
+    text: `Here are some complementary products from our catalog for ${main.name}:\n${lines.join('\n')}`,
+    products: selected.map((product) => ({
+      id: product._id.toString(),
+      name: product.name,
+      price: product.price,
+      stock: product.stock,
+      category: product.category,
+      brand: product.brand,
+      subcategory: product.subcategory,
+      description: product.shortDescription || product.description,
+    })),
+    pendingOrder: null,
+  };
+};
+
 const resolveSpecificProductRequest = async ({ message, history = [], context }) => {
   const lower = message.toLowerCase();
   const previousProduct = getPreviousProductFromContext(history, context);
@@ -274,6 +379,13 @@ const runAgent = async ({ message, history = [], context }) => {
   } : null;
 
   const budgetSearch = parseBudgetConstraints(message);
+  if (isComplementaryRequest(message)) {
+    const complementary = await resolveComplementaryProducts({ message, history, context });
+    if (complementary) {
+      return complementary;
+    }
+  }
+
   if (!isBudgetSearch(message) && isSpecificProductRequest(message)) {
     const specificProduct = await resolveSpecificProductRequest({ message, history, context });
     if (specificProduct) {
