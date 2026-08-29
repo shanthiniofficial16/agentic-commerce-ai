@@ -3,7 +3,7 @@ import { Link, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { Bot, Heart, Menu, Search, ShoppingBag, User, X } from 'lucide-react'
 import { addToCart, getCart, getOrders, getUserProfile, updateUserProfile } from '../services/api'
 import { useAuth } from '../hooks/useAuth'
-import { Assistant, CartPage, Checkout, ProductDetails, Products, ShopHome, SimplePage } from './ShopPages'
+import { Assistant, CartPage, Checkout, OrderDashboard, ProductDetails, Products, ShopHome, SimplePage } from './ShopPages'
 
 function ProfilePage() {
   const { auth } = useAuth()
