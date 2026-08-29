@@ -25,6 +25,7 @@ const catalog = [
   ['Sports', 'StrideFlex Yoga Mat', 'StrideFlex', 'Fitness', 1499], ['Sports', 'CoreLoop Resistance Set', 'CoreLoop', 'Fitness', 1199], ['Sports', 'PaceRun Daily Trainer', 'PaceRun', 'Running', 3899], ['Sports', 'AeroLite Running Bottle', 'AeroLite', 'Running', 699], ['Sports', 'CampNest Day Pack', 'CampNest', 'Outdoor', 2499], ['Sports', 'TrailBeam Headlamp', 'TrailBeam', 'Outdoor', 999],
   ['Books', 'The Quiet Advantage', 'Mira Sen', 'Business', 499], ['Books', 'Signals in the Rain', 'Ari Vale', 'Fiction', 399], ['Books', 'Build Better Habits', 'Nikhil Rao', 'Learning', 599], ['Books', 'Small Teams, Big Work', 'Leah Moss', 'Business', 549], ['Books', 'The Map of Ordinary Days', 'Ira Bell', 'Fiction', 449], ['Books', 'Learn by Making', 'Theo Park', 'Learning', 649],
   ['Accessories', 'MetroFold Laptop Backpack', 'MetroFold', 'Bags', 2199], ['Accessories', 'ArcDesk Mechanical Keyboard', 'ArcDesk', 'Desk', 3999], ['Accessories', 'Glide Wireless Mouse', 'Glide', 'Desk', 1499], ['Accessories', 'DockMate USB-C Hub', 'DockMate', 'Desk', 2299], ['Accessories', 'Voyage Packing Cubes', 'Voyage', 'Travel', 1299], ['Accessories', 'LoopCable Organizer', 'Loop', 'Travel', 399],
+  ['Fashion', 'Aural Silk Saree', 'Aural', 'Sarees', 4999], ['Fashion', 'Pari Cotton Saree', 'Pari', 'Sarees', 2999], ['Fashion', 'Luna Pearl Bracelet', 'Luna', 'Jewellery', 899], ['Fashion', 'Eon Gold Ring', 'Eon', 'Jewellery', 1199], ['Electronics', 'CodeCraft Laptop 162 Plus', 'CodeCraft', 'Laptops', 69999],
 ];
 const slugify = (text) => text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
 const imageFor = (category, index) => `https://images.unsplash.com/photo-${['1523275335684-37898b6baf30', '1542291026-7eec264c27ff', '1556228578-0d85b1a4d571', '1556911220-e15b29be8c8f', '1542838132-92c53300491e', '1517836357463-d25dfeac3438', '1495446815901-a7297e633e8d', '1523779917675-b6ed3a42a561'][index % 8]}?auto=format&fit=crop&w=900&q=80`;
@@ -49,7 +50,23 @@ async function seed() {
       products[index].aiMetadata.similarProductIds = [products[(index + 2) % products.length]._id];
       await products[index].save();
     }
-    await User.create({ name: 'Customer', email: 'customer@example.com', passwordHash: 'test123', role: 'CUSTOMER' });
+    await User.create({
+      name: 'Customer',
+      email: 'customer@example.com',
+      passwordHash: 'test123',
+      role: 'CUSTOMER',
+      profile: {
+        fullName: 'Customer',
+        phone: '9876543210',
+        email: 'customer@example.com',
+        street: '123 Market Street',
+        building: 'A-12',
+        landmark: 'Near City Center',
+        city: 'Bengaluru',
+        state: 'Karnataka',
+        pincode: '560001',
+      },
+    });
     console.log(`Seeded ${categories.length} categories and ${products.length} products.`);
     console.log('Customer: customer@example.com / test123');
     console.log('Merchant: merchant@example.com / test123');

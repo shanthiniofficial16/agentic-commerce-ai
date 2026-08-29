@@ -31,6 +31,32 @@ const getPreviousProductFromContext = (history = [], context = {}) => {
   return null;
 };
 
+const resolveReferencedProduct = async ({ message, history = [], context }) => {
+  const lower = message.toLowerCase();
+  const previous = getPreviousProductFromContext(history, context);
+  if (previous?.id || previous?._id) return previous;
+
+  const ordinalMatch = lower.match(/\b(first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)\s+one\b/);
+  if (ordinalMatch) {
+    const order = ['first','second','third','fourth','fifth','sixth','seventh','eighth','ninth','tenth'];
+    const index = order.indexOf(ordinalMatch[1].toLowerCase());
+    const items = [...history].flatMap((item) => (Array.isArray(item?.metadata?.products) ? item.metadata.products : []));
+    const target = items[index] || items[items.length - 1];
+    if (target?.id || target?._id) return target;
+  }
+
+  const searchText = normalizeProductQuery(message)
+    .replace(/\b(this|that|it|the|previous product|product|one)\b/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (!searchText) return null;
+
+  const search = await executeTool('searchProducts', { query: searchText, keywords: searchText }, context);
+  const candidates = Array.isArray(search?.products) ? search.products : [];
+  return candidates[0] || null;
+};
+
 const isSpecificProductRequest = (message) => {
   const text = message.toLowerCase();
   const referencePattern = /\b(it|this|that|the first one|the second one|the third one|the fourth one|the fifth one|first one|second one|third one|fourth one|fifth one|the last one|last one|previous product|the previous product)\b/.test(text) || /\b(first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)\s+one\b/.test(text);
@@ -148,7 +174,9 @@ const formatBudgetText = (result) => {
 
 const isBudgetSearch = (message) => {
   const lower = message.toLowerCase();
-  return /(laptop|phone|phones|mobile|mobiles|headphone|earbuds|earphone|tablet|watch|budget|under|below|between|cheapest|best|around|approximately|roughly)/.test(lower);
+  const hasPriceSignal = /(budget|under|below|between|less than|up to|at most|above|over|from|starting at|around|approximately|roughly|cheapest|best|top rated|highest rated|low price|lowest price)/.test(lower);
+  const hasCategorySignal = /(laptop|phone|phones|mobile|mobiles|headphone|earbuds|earphone|tablet|watch)/.test(lower);
+  return hasPriceSignal && hasCategorySignal;
 };
 
 const isComplementaryRequest = (message) => {
@@ -481,6 +509,65 @@ const runAgent = async ({ message, history = [], context }) => {
     const specificProduct = await resolveSpecificProductRequest({ message, history, context });
     if (specificProduct) {
       return specificProduct;
+    }
+  }
+
+  if (isOrderRequest(message)) {
+    const resolvedProduct = currentProduct || (() => {
+      const previousProduct = [...history].reverse().find((item) => item.metadata?.products?.length)?.metadata.products[0];
+      return previousProduct ? { id: previousProduct.id, name: previousProduct.name } : null;
+    })();
+
+    if (!resolvedProduct && message) {
+      const searchResult = await executeTool('searchProducts', { query: message, keywords: normalizeProductQuery(message) }, context);
+      const matchedProduct = pickBestProduct(searchResult.products, message);
+      if (matchedProduct) {
+        const prepared = await executeTool('prepareOrder', { productId: matchedProduct.id, quantity: 1 }, context);
+        context.pendingOrder = prepared;
+        if (prepared.state === 'AWAITING_APPROVAL') {
+          const profile = prepared.profile || {};
+          const deliveryLine = [profile.fullName, profile.address || [profile.street, profile.building, profile.landmark].filter(Boolean).join(', '), profile.city && profile.state ? `${profile.city}, ${profile.state}` : profile.city || profile.state, profile.pincode, profile.phone].filter(Boolean).join('\n');
+          return {
+            text: `${prepared.product.name} — ${prepared.product.currency || '₹'}${prepared.total || prepared.product.price}\n\nDelivery details:\n${deliveryLine}\n\nDo you want to confirm your order? Yes / No`,
+            products: searchResult.products,
+            pendingOrder: prepared,
+            selectedProductId: getProductId(matchedProduct),
+          };
+        }
+        if (prepared.state === 'PROFILE_REQUIRED') {
+          const missing = prepared.requiredFields || [];
+          const askFor = missing[0];
+          return {
+            text: `I need your ${friendlyFieldLabel(askFor)} to complete this order before checkout.`,
+            products: searchResult.products,
+            pendingOrder: prepared,
+            selectedProductId: getProductId(matchedProduct),
+          };
+        }
+      }
+    }
+
+    if (resolvedProduct && resolvedProduct.id) {
+      const prepared = await executeTool('prepareOrder', { productId: resolvedProduct.id, quantity: 1 }, context);
+      context.pendingOrder = prepared;
+      if (prepared.state === 'AWAITING_APPROVAL') {
+        const profile = prepared.profile || {};
+        const deliveryLine = [profile.fullName, profile.address || [profile.street, profile.building, profile.landmark].filter(Boolean).join(', '), profile.city && profile.state ? `${profile.city}, ${profile.state}` : profile.city || profile.state, profile.pincode, profile.phone].filter(Boolean).join('\n');
+        return {
+          text: `${prepared.product.name} — ${prepared.product.currency || '₹'}${prepared.total || prepared.product.price}\n\nDelivery details:\n${deliveryLine}\n\nDo you want to confirm your order? Yes / No`,
+          products: [],
+          pendingOrder: prepared,
+        };
+      }
+      if (prepared.state === 'PROFILE_REQUIRED') {
+        const missing = prepared.requiredFields || [];
+        const askFor = missing[0];
+        return {
+          text: `I need your ${friendlyFieldLabel(askFor)} to complete this order before checkout.`,
+          products: [],
+          pendingOrder: prepared,
+        };
+      }
     }
   }
 

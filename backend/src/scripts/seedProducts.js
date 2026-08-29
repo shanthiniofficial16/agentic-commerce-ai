@@ -29,6 +29,9 @@ const families = [
   ['Keyboards', 'KeyCraft', 'Keyboard', 1000, 12000, ['coding', 'office', 'gaming']],
   ['Gaming', 'GameForge', 'Gaming', 3000, 180000, ['gaming', 'streaming', 'esports']],
   ['Accessories', 'NovaGear', 'Accessory', 500, 15000, ['travel', 'office', 'daily use']],
+  ['Sarees', 'Aural', 'Saree', 1999, 7000, ['traditional', 'wedding', 'festive']],
+  ['Jewellery', 'Luna', 'Bracelet', 499, 4500, ['gift', 'occasion', 'style']],
+  ['Jewellery', 'Eon', 'Ring', 699, 3500, ['gift', 'occasion', 'style']],
 ];
 
 const slugify = (value) => value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');

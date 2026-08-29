@@ -149,10 +149,10 @@ const chat = async (req, res) => {
   } catch (error) {
     console.error('[Agent] chat request failed', {
       userId: req.userId,
-      message: typeof message === 'string' ? message.slice(0, 200) : message,
-      sessionId,
-      merchantId,
-      currentProductId,
+      message: typeof req.body?.message === 'string' ? req.body.message.slice(0, 200) : req.body?.message,
+      sessionId: req.body?.sessionId,
+      merchantId: req.body?.merchantId,
+      currentProductId: req.body?.currentProductId,
       code: error.code,
       status: error.status,
       stack: error.stack,
