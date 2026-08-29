@@ -17,6 +17,25 @@ const friendlyFieldLabel = (field) => {
 };
 
 const normalizeProductQuery = (message) => message.replace(/\b(i want to buy|i want|buy|purchase|order|please|the|a|an)\b/gi, ' ').replace(/\s+/g, ' ').trim();
+const normalizeCatalogName = (value = '') => String(value).toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
+
+const getPreviousProductFromContext = (history = [], context = {}) => {
+  if (context.currentProduct) return context.currentProduct;
+  for (let index = history.length - 1; index >= 0; index -= 1) {
+    const item = history[index];
+    const candidate = item?.metadata?.products?.[0];
+    if (candidate?.id) return candidate;
+  }
+  return null;
+};
+
+const isSpecificProductRequest = (message) => {
+  const text = message.toLowerCase();
+  if (/\b(this|that)\s+(laptop|phone|headphone|product|item)\b/.test(text)) return true;
+  if (/\b(show me|tell me about|how much is|how much does|is .* available|available\?|what is the price|price of|add .* to my cart|buy .*|purchase .*|order .*)\b/.test(text)) return true;
+  const tokens = normalizeProductQuery(message).split(/\s+/).filter(Boolean);
+  return tokens.length >= 3 && !/\b(hello|hi|hey|thanks|thank you|find products|show me available|show me laptops|show me phones|show me headphones)\b/.test(text);
+};
 
 const pickBestProduct = (products, message) => {
   const normalizedMessage = normalizeProductQuery(message).toLowerCase();
@@ -128,6 +147,120 @@ const isBudgetSearch = (message) => {
   return /(laptop|phone|phones|mobile|mobiles|headphone|earbuds|earphone|tablet|watch|budget|under|below|between|cheapest|best|around|approximately|roughly)/.test(lower);
 };
 
+const resolveSpecificProductRequest = async ({ message, history = [], context }) => {
+  const lower = message.toLowerCase();
+  const previousProduct = getPreviousProductFromContext(history, context);
+
+  if (/(this|that|it)\b/.test(lower) && previousProduct?.id) {
+    const product = await executeTool('getProductDetails', { productId: previousProduct.id }, context);
+    return {
+      text: `${product.product.name} — ₹${Number(product.product.price).toLocaleString('en-IN')}\nAvailability: ${Number(product.product.stock) > 0 ? `In stock (${product.product.stock} units available)` : 'Currently unavailable'}\n\n${product.product.description || product.product.shortDescription || 'No additional description is available.'}`,
+      products: [product.product],
+      pendingOrder: null,
+    };
+  }
+
+  const candidateText = normalizeProductQuery(message).trim();
+  if (!candidateText || candidateText.length < 2 || isBudgetSearch(message)) {
+    return null;
+  }
+
+  const searchResult = await executeTool('searchProducts', { query: candidateText, keywords: candidateText }, context);
+  const products = Array.isArray(searchResult?.products) ? searchResult.products : [];
+  if (!products.length) {
+    return {
+      text: `I couldn’t find “${message.trim()}” in the current catalog. Please check the product name or ask for a different item.`,
+      products: [],
+      pendingOrder: null,
+    };
+  }
+
+  const normalizedQuery = normalizeCatalogName(candidateText);
+  const scoredProducts = products
+    .map((product) => {
+      const haystack = normalizeCatalogName(`${product.name} ${product.brand || ''} ${product.category || ''}`);
+      let score = 0;
+      if (normalizeCatalogName(product.name) === normalizedQuery) score = 100;
+      else if (haystack.includes(normalizedQuery) || normalizedQuery.includes(haystack)) score = 90;
+      else if (haystack.includes(normalizedQuery.split(' ').slice(0, 2).join(' ')) || normalizedQuery.includes(haystack.split(' ').slice(0, 2).join(' '))) score = 70;
+      return { product, score };
+    })
+    .filter((entry) => entry.score >= 70)
+    .sort((a, b) => b.score - a.score);
+
+  if (!scoredProducts.length) {
+    return {
+      text: `I couldn’t find “${message.trim()}” in the current catalog. Please check the product name or ask for a different item.`,
+      products: [],
+      pendingOrder: null,
+    };
+  }
+
+  const match = scoredProducts[0].product;
+  const product = await executeTool('getProductDetails', { productId: match.id }, context);
+  const current = product.product;
+  const asksForPrice = /(how much|price|cost|what is the price)/.test(lower);
+  const asksForAvailability = /(available|in stock|stock|availability|is .* available)/.test(lower);
+  const asksForDetails = /(show me|tell me about|describe|details|what is it)/.test(lower);
+  const asksToAdd = /add .* to my cart|add to cart/.test(lower);
+  const asksToBuy = /\b(buy|purchase|order)\b/.test(lower);
+
+  if (asksToAdd) {
+    const cartResult = await executeTool('addToCart', { productId: current.id, quantity: 1 }, context);
+    return {
+      text: `${current.name} was added to your cart. Current total: ₹${Number(cartResult.total || 0).toLocaleString('en-IN')}.`,
+      products: [current],
+      pendingOrder: null,
+    };
+  }
+
+  if (asksToBuy) {
+    const prepared = await executeTool('prepareOrder', { productId: current.id, quantity: 1 }, context);
+    context.pendingOrder = prepared;
+    if (prepared.state === 'PROFILE_REQUIRED') {
+      const missing = prepared.requiredFields || [];
+      const askFor = missing[0];
+      return {
+        text: `I need your ${friendlyFieldLabel(askFor)} to complete this order before checkout.`,
+        products: [current],
+        pendingOrder: prepared,
+      };
+    }
+    if (prepared.state === 'AWAITING_APPROVAL') {
+      const profile = prepared.profile || {};
+      const deliveryLine = [profile.fullName, profile.address || [profile.street, profile.building, profile.landmark].filter(Boolean).join(', '), profile.city && profile.state ? `${profile.city}, ${profile.state}` : profile.city || profile.state, profile.pincode, profile.phone].filter(Boolean).join('\n');
+      return {
+        text: `${prepared.product.name} — ${prepared.product.currency || '₹'}${prepared.total || prepared.product.price}\n\nDelivery details:\n${deliveryLine}\n\nDo you want to confirm your order? Yes / No`,
+        products: [current],
+        pendingOrder: prepared,
+      };
+    }
+  }
+
+  if (asksForPrice) {
+    return {
+      text: `${current.name} is priced at ₹${Number(current.price).toLocaleString('en-IN')}.`,
+      products: [current],
+      pendingOrder: null,
+    };
+  }
+
+  if (asksForAvailability) {
+    return {
+      text: `${current.name} is ${Number(current.stock) > 0 ? `available in stock (${current.stock} units left)` : 'currently unavailable'}.`,
+      products: [current],
+      pendingOrder: null,
+    };
+  }
+
+  const description = current.description || current.shortDescription || 'No additional product description is available.';
+  return {
+    text: `${current.name}\nPrice: ₹${Number(current.price).toLocaleString('en-IN')}\nAvailability: ${Number(current.stock) > 0 ? `In stock (${current.stock} units available)` : 'Currently unavailable'}\n\n${description}`,
+    products: [current],
+    pendingOrder: null,
+  };
+};
+
 const runAgent = async ({ message, history = [], context }) => {
   const currentProduct = context.currentProduct ? {
     id: context.currentProduct._id.toString(),
@@ -141,6 +274,13 @@ const runAgent = async ({ message, history = [], context }) => {
   } : null;
 
   const budgetSearch = parseBudgetConstraints(message);
+  if (!isBudgetSearch(message) && isSpecificProductRequest(message)) {
+    const specificProduct = await resolveSpecificProductRequest({ message, history, context });
+    if (specificProduct) {
+      return specificProduct;
+    }
+  }
+
   if (isBudgetSearch(message)) {
     const searchArgs = {
       query: message,
