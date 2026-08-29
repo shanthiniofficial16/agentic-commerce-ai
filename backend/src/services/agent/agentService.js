@@ -19,6 +19,7 @@ const friendlyFieldLabel = (field) => {
 
 const normalizeProductQuery = (message) => message.replace(/\b(i want to buy|i want|buy|purchase|order|please|the|a|an)\b/gi, ' ').replace(/\s+/g, ' ').trim();
 const normalizeCatalogName = (value = '') => String(value).toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
+const getProductId = (product) => product?._id ? product._id.toString() : product?.id || null;
 
 const getPreviousProductFromContext = (history = [], context = {}) => {
   if (context.currentProduct) return context.currentProduct;
@@ -32,6 +33,8 @@ const getPreviousProductFromContext = (history = [], context = {}) => {
 
 const isSpecificProductRequest = (message) => {
   const text = message.toLowerCase();
+  const referencePattern = /\b(it|this|that|the first one|the second one|the third one|the fourth one|the fifth one|first one|second one|third one|fourth one|fifth one|the last one|last one|previous product|the previous product)\b/.test(text) || /\b(first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)\s+one\b/.test(text);
+  if (referencePattern) return true;
   if (/\b(this|that)\s+(laptop|phone|headphone|product|item)\b/.test(text)) return true;
   if (/\b(show me|tell me about|how much is|how much does|is .* available|available\?|what is the price|price of|add .* to my cart|buy .*|purchase .*|order .*)\b/.test(text)) return true;
   const tokens = normalizeProductQuery(message).split(/\s+/).filter(Boolean);
@@ -262,6 +265,17 @@ const resolveComplementaryProducts = async ({ message, history = [], context }) 
 const resolveSpecificProductRequest = async ({ message, history = [], context }) => {
   const lower = message.toLowerCase();
   const previousProduct = getPreviousProductFromContext(history, context);
+  const referencedProduct = await resolveReferencedProduct({ message, history, context });
+
+  if ((/(this|that|it|the first one|the second one|the third one|the fourth one|the fifth one|first one|second one|third one|fourth one|fifth one|last one|previous product)/.test(lower) || /\b(first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)\b/.test(lower)) && (referencedProduct?._id || referencedProduct?.id)) {
+    const product = await executeTool('getProductDetails', { productId: referencedProduct._id ? referencedProduct._id.toString() : referencedProduct.id }, context);
+    return {
+      text: `${product.product.name} — ₹${Number(product.product.price).toLocaleString('en-IN')}\nAvailability: ${Number(product.product.stock) > 0 ? `In stock (${product.product.stock} units available)` : 'Currently unavailable'}\n\n${product.product.description || product.product.shortDescription || 'No additional description is available.'}`,
+      products: [product.product],
+      pendingOrder: null,
+      selectedProductId: getProductId(product.product),
+    };
+  }
 
   if (/(this|that|it)\b/.test(lower) && previousProduct?.id) {
     const product = await executeTool('getProductDetails', { productId: previousProduct.id }, context);
@@ -269,6 +283,7 @@ const resolveSpecificProductRequest = async ({ message, history = [], context })
       text: `${product.product.name} — ₹${Number(product.product.price).toLocaleString('en-IN')}\nAvailability: ${Number(product.product.stock) > 0 ? `In stock (${product.product.stock} units available)` : 'Currently unavailable'}\n\n${product.product.description || product.product.shortDescription || 'No additional description is available.'}`,
       products: [product.product],
       pendingOrder: null,
+      selectedProductId: getProductId(product.product),
     };
   }
 
@@ -323,6 +338,7 @@ const resolveSpecificProductRequest = async ({ message, history = [], context })
       text: `${current.name} was added to your cart. Current total: ₹${Number(cartResult.total || 0).toLocaleString('en-IN')}.`,
       products: [current],
       pendingOrder: null,
+      selectedProductId: getProductId(current),
     };
   }
 
@@ -336,6 +352,7 @@ const resolveSpecificProductRequest = async ({ message, history = [], context })
         text: `I need your ${friendlyFieldLabel(askFor)} to complete this order before checkout.`,
         products: [current],
         pendingOrder: prepared,
+        selectedProductId: getProductId(current),
       };
     }
     if (prepared.state === 'AWAITING_APPROVAL') {
@@ -345,6 +362,7 @@ const resolveSpecificProductRequest = async ({ message, history = [], context })
         text: `${prepared.product.name} — ${prepared.product.currency || '₹'}${prepared.total || prepared.product.price}\n\nDelivery details:\n${deliveryLine}\n\nDo you want to confirm your order? Yes / No`,
         products: [current],
         pendingOrder: prepared,
+        selectedProductId: getProductId(current),
       };
     }
   }
@@ -354,6 +372,7 @@ const resolveSpecificProductRequest = async ({ message, history = [], context })
       text: `${current.name} is priced at ₹${Number(current.price).toLocaleString('en-IN')}.`,
       products: [current],
       pendingOrder: null,
+      selectedProductId: getProductId(current),
     };
   }
 
@@ -362,6 +381,7 @@ const resolveSpecificProductRequest = async ({ message, history = [], context })
       text: `${current.name} is ${Number(current.stock) > 0 ? `available in stock (${current.stock} units left)` : 'currently unavailable'}.`,
       products: [current],
       pendingOrder: null,
+      selectedProductId: getProductId(current),
     };
   }
 
@@ -370,6 +390,7 @@ const resolveSpecificProductRequest = async ({ message, history = [], context })
     text: `${current.name}\nPrice: ₹${Number(current.price).toLocaleString('en-IN')}\nAvailability: ${Number(current.stock) > 0 ? `In stock (${current.stock} units available)` : 'Currently unavailable'}\n\n${description}`,
     products: [current],
     pendingOrder: null,
+    selectedProductId: getProductId(current),
   };
 };
 
@@ -427,6 +448,7 @@ const resolveCombinedShoppingIntent = async ({ message, history = [], context })
     text,
     products: [...products.slice(0, 5), ...(complementary?.products || [])],
     pendingOrder: complementary?.pendingOrder || null,
+    selectedProductId: getProductId(mainProduct),
   };
 };
 
@@ -522,6 +544,7 @@ const runAgent = async ({ message, history = [], context }) => {
             text: `${prepared.product.name} — ${prepared.product.currency || '₹'}${prepared.total || prepared.product.price}\n\nDelivery details:\n${deliveryLine}\n\nDo you want to confirm your order? Yes / No`,
             products: searchResult.products,
             pendingOrder: prepared,
+            selectedProductId: getProductId(matchedProduct),
           };
         }
         if (prepared.state === 'PROFILE_REQUIRED') {
@@ -531,6 +554,7 @@ const runAgent = async ({ message, history = [], context }) => {
             text: `I need your ${friendlyFieldLabel(askFor)} to complete this order before checkout.`,
             products: searchResult.products,
             pendingOrder: prepared,
+            selectedProductId: getProductId(matchedProduct),
           };
         }
       }
@@ -617,7 +641,7 @@ const runAgent = async ({ message, history = [], context }) => {
     messages.push(assistant);
     if (!assistant.tool_calls?.length) {
       console.log('[Agent] Sending final response');
-      return { text: assistant.content || 'I could not find an answer for that request.', products, pendingOrder: context.pendingOrder };
+      return { text: assistant.content || 'I could not find an answer for that request.', products, pendingOrder: context.pendingOrder, selectedProductId: getProductId(referencedProduct || currentProduct || context.currentProduct) };
     }
     for (const call of assistant.tool_calls) {
       console.log(`[Agent] Tool requested: ${call.function.name}`);

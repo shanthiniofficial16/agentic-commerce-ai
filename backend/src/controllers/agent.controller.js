@@ -64,7 +64,11 @@ const chat = async (req, res) => {
       ? await Product.findOne({ _id: currentProductId, merchantId: merchant._id, active: true })
         .select('name brand category price currency shortDescription description stock ratings images')
         .lean()
-      : null;
+      : conversation.selectedProductId
+        ? await Product.findOne({ _id: conversation.selectedProductId, merchantId: merchant._id, active: true })
+          .select('name brand category price currency shortDescription description stock ratings images')
+          .lean()
+        : null;
 
     if (isApproval(message) || isCancellation(message)) {
       if (conversation.orderState !== 'AWAITING_APPROVAL' || !conversation.pendingOrder) {
@@ -114,12 +118,15 @@ const chat = async (req, res) => {
     const result = await runAgent({
       message: message.trim(),
       history: conversation.messages.slice(-12),
-      context: { userId: req.userId, merchantId: merchant._id, currentProduct, pendingOrder: conversation.pendingOrder },
+      context: { userId: req.userId, merchantId: merchant._id, currentProduct, selectedProductId: conversation.selectedProductId, pendingOrder: conversation.pendingOrder },
     });
 
     if (result.pendingOrder) {
       conversation.orderState = result.pendingOrder.state;
       conversation.pendingOrder = result.pendingOrder;
+    }
+    if (result.selectedProductId) {
+      conversation.selectedProductId = result.selectedProductId;
     }
 
     conversation.messages.push({ role: 'USER', content: message.trim() });

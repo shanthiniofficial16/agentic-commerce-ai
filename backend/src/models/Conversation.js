@@ -31,6 +31,11 @@ const conversationSchema = new mongoose.Schema(
       unique: true,
     },
     messages: [messageSchema],
+    selectedProductId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Product',
+      default: null,
+    },
     status: {
       type: String,
       enum: ['ACTIVE', 'CLOSED'],
