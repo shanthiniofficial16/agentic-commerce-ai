@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 const Conversation = require('../models/Conversation');
 const Merchant = require('../models/Merchant');
 const Product = require('../models/Product');
-const { runAgent } = require('../services/agent/agentService');
+const { runAgent, isPurchaseIntent } = require('../services/agent/agentService');
 const { createPendingPayment } = require('../services/order.service');
 const { sanitizeErrorPayload } = require('../utils/errorMessageMap');
 
@@ -93,7 +93,10 @@ const chat = async (req, res) => {
           .lean()
         : null;
 
-    const confirmationDecision = parseConfirmationResponse(message);
+    const hasPendingOrder = isPendingConfirmationState(conversation.orderState) && conversation.pendingOrder;
+    const parsedDecision = parseConfirmationResponse(message);
+    // Purchase phrases such as "Buy it" start checkout unless a preview already exists.
+    const confirmationDecision = !hasPendingOrder && isPurchaseIntent(message) ? 'pending' : parsedDecision;
     if (conversation.orderState === 'PAYMENT_PENDING' && conversation.pendingOrder?.payment) {
       return res.json({ success: true, data: { message: 'Checkout is confirmed, but payment is still pending. Complete the secure Razorpay payment to place your order.', sessionId: conversation.sessionId, payment: conversation.pendingOrder.payment } });
     }
