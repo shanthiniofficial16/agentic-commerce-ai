@@ -87,7 +87,15 @@ const requiredToolFor = (message) => {
   if (/\b(track|where.*order|order status)\b/.test(text)) return 'trackOrder';
   return null;
 };
-const isOrderRequest = (message) => /\b(buy|proceed|place|confirm|order)\b/.test(message.toLowerCase());
+
+const isPurchaseIntent = (message) => {
+  const text = message.toLowerCase();
+  return /(i want to buy|i want this|i want to purchase|buy this|purchase this|buy the|purchase the|place an order for this|place an order for that|proceed with this|proceed with that|proceed with this product|proceed with that product|buy it|purchase it)/.test(text)
+    || /^(buy|purchase|place an order|proceed|i want this|i want to buy|i want to purchase)\b/.test(text)
+    || /\b(buy|purchase|order|place|proceed)\b.*\b(this|that|it|product)\b/.test(text);
+};
+
+const isOrderRequest = (message) => isPurchaseIntent(message) || /\b(buy|proceed|place|confirm|order|purchase)\b/.test(message.toLowerCase());
 
 const normalizeCurrencyNumber = (value, suffix) => {
   if (value === undefined || value === null || value === '') return null;
@@ -494,6 +502,45 @@ const runAgent = async ({ message, history = [], context }) => {
     }
   }
 
+  if (isPurchaseIntent(message)) {
+    const purchaseTarget = currentProduct || await resolveReferencedProduct({ message, history, context }) || (() => {
+      const previousProduct = [...history].reverse().find((item) => item.metadata?.products?.length)?.metadata.products[0];
+      return previousProduct ? { id: previousProduct.id, _id: previousProduct.id, name: previousProduct.name } : null;
+    })();
+
+    if (purchaseTarget) {
+      const productId = purchaseTarget.id || purchaseTarget._id?.toString?.() || purchaseTarget._id;
+      if (productId) {
+        const product = await executeTool('getProductDetails', { productId }, context);
+        const prepared = await executeTool('prepareOrder', { productId, quantity: 1 }, context);
+        context.pendingOrder = prepared;
+
+        if (prepared.state === 'PROFILE_REQUIRED') {
+          const missing = prepared.requiredFields || [];
+          const askFor = missing[0];
+          return {
+            text: `I need your ${friendlyFieldLabel(askFor)} to complete this order before checkout.`,
+            products: [product.product],
+            pendingOrder: prepared,
+            selectedProductId: getProductId(product.product),
+          };
+        }
+
+        if (prepared.state === 'AWAITING_APPROVAL') {
+          const profile = prepared.profile || {};
+          const deliveryLine = [profile.fullName, profile.address || [profile.street, profile.building, profile.landmark].filter(Boolean).join(', '), profile.city && profile.state ? `${profile.city}, ${profile.state}` : profile.city || profile.state, profile.pincode, profile.phone].filter(Boolean).join('\n');
+
+          return {
+            text: `${product.product.name}\nPrice: ₹${Number(product.product.price).toLocaleString('en-IN')}\nDelivery to: ${deliveryLine}\n\nDo you want to confirm your order? Yes / No`,
+            products: [product.product],
+            pendingOrder: prepared,
+            selectedProductId: getProductId(product.product),
+          };
+        }
+      }
+    }
+  }
+
   if (!isBudgetSearch(message) && isSpecificProductRequest(message)) {
     const specificProduct = await resolveSpecificProductRequest({ message, history, context });
     if (specificProduct) {
@@ -744,4 +791,6 @@ module.exports = {
   parseBudgetConstraints,
   isBudgetSearch,
   formatBudgetText,
+  isPurchaseIntent,
+  isOrderRequest,
 };
