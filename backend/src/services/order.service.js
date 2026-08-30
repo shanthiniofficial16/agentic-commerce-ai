@@ -3,6 +3,7 @@ const User = require('../models/User');
 const Order = require('../models/Order');
 const Payment = require('../models/Payment');
 const Product = require('../models/Product');
+const { createOrder: createRazorpayOrder, verifySignature, fetchPayment } = require('./razorpay.provider');
 
 const profileFields = ['fullName', 'phone', 'email', 'street', 'city', 'state', 'pincode'];
 const normalizeProfile = (value = {}) => {
@@ -117,17 +118,32 @@ const createPendingPayment = async ({ userId, merchantId, pendingOrder, idempote
       amount: existing.amount,
       currency: existing.currency,
       orderId: existing.orderId ? existing.orderId.toString() : null,
+      razorpayOrderId: existing.razorpayOrderId,
+      keyId: process.env.RAZORPAY_KEY_ID,
     };
   }
+  const amount = Number(product.price) * Number(pendingOrder.quantity || 1);
   const payment = await Payment.create({
     userId,
     merchantId,
-    amount: Number(product.price) * Number(pendingOrder.quantity || 1),
+    amount,
     currency: product.currency || 'INR',
-    status: 'PENDING',
+    status: 'INITIATED',
     verified: false,
     idempotencyKey: paymentKey,
   });
+  let provider;
+  try {
+    provider = await createRazorpayOrder({ amount, currency: product.currency || 'INR', receipt: paymentKey.slice(0, 40) });
+  } catch (error) {
+    payment.status = 'FAILED';
+    payment.failureReason = error.message;
+    await payment.save();
+    throw error;
+  }
+  payment.status = 'INITIATED';
+  payment.razorpayOrderId = provider.order.id;
+  await payment.save();
   return {
     paymentId: payment._id.toString(),
     status: payment.status,
@@ -135,53 +151,35 @@ const createPendingPayment = async ({ userId, merchantId, pendingOrder, idempote
     amount: payment.amount,
     currency: payment.currency,
     orderId: null,
+    razorpayOrderId: provider.order.id,
+    keyId: provider.keyId,
+    checkoutAmount: provider.order.amount,
   };
 };
 
+const verifyAndFinalizePayment = async ({ userId, merchantId, pendingOrder, razorpayOrderId, razorpayPaymentId, razorpaySignature, idempotencyKey }) => {
+  if (!pendingOrder?.product?.id || !razorpayOrderId || !razorpayPaymentId || !razorpaySignature) throw Object.assign(new Error('Incomplete payment verification details'), { code: 'PAYMENT_VERIFICATION_INVALID', status: 400 });
+  if (!verifySignature({ orderId: razorpayOrderId, paymentId: razorpayPaymentId, signature: razorpaySignature })) throw Object.assign(new Error('Payment signature verification failed'), { code: 'PAYMENT_VERIFICATION_FAILED', status: 400 });
+  const paymentRecord = await Payment.findOne({ userId, merchantId, razorpayOrderId, idempotencyKey });
+  if (!paymentRecord) throw Object.assign(new Error('Payment transaction not found'), { code: 'PAYMENT_NOT_FOUND', status: 404 });
+  const providerPayment = await fetchPayment(razorpayPaymentId);
+  if (!['captured', 'authorized'].includes(providerPayment.status)) {
+    paymentRecord.status = 'FAILED';
+    paymentRecord.failureReason = `Provider payment status: ${providerPayment.status}`;
+    await paymentRecord.save();
+    throw Object.assign(new Error('Payment was not verified by Razorpay'), { code: 'PAYMENT_FAILED', status: 402 });
+  }
+  paymentRecord.razorpayPaymentId = razorpayPaymentId;
+  paymentRecord.status = 'VERIFIED_SUCCESS';
+  paymentRecord.verified = true;
+  await paymentRecord.save();
+  const order = await createOrder({ userId, merchantId, pendingOrder, idempotencyKey, paymentId: paymentRecord._id.toString(), paymentStatus: 'PAID' });
+  await Payment.updateOne({ _id: paymentRecord._id }, { $set: { orderId: order.id } });
+  return { payment: paymentRecord.toObject(), order };
+};
+
 const finalizeVerifiedCheckout = async ({ userId, merchantId, pendingOrder, idempotencyKey }) => {
-  if (!pendingOrder?.product?.id) throw Object.assign(new Error('No order preview is awaiting approval'), { code: 'ORDER_NOT_READY', status: 409 });
-  const paymentKey = idempotencyKey || `payment:${userId}:${merchantId}:${pendingOrder.product.id}:${pendingOrder.quantity}`;
-  const existingPayment = await Payment.findOne({ idempotencyKey: paymentKey }).lean();
-  if (existingPayment?.status === 'SUCCESS' && existingPayment.orderId) {
-    const existingOrder = await Order.findById(existingPayment.orderId).lean();
-    if (existingOrder) return { payment: existingPayment, order: { ...existingOrder, id: existingOrder._id.toString() }, duplicate: true };
-  }
-
-  const profile = await getProfile(userId);
-  if (!profile || validateProfile(profile)) throw Object.assign(new Error('Complete delivery details are required before checkout'), { code: 'PROFILE_REQUIRED', status: 400 });
-
-  const product = await Product.findOne({ _id: pendingOrder.product.id, merchantId, active: true }).lean();
-  if (!product) throw Object.assign(new Error('Product not found'), { code: 'PRODUCT_NOT_FOUND', status: 404 });
-
-  const payment = await Payment.findOneAndUpdate({ idempotencyKey: paymentKey }, {
-    userId,
-    merchantId,
-    amount: Number(product.price) * Number(pendingOrder.quantity || 1),
-    currency: product.currency || 'INR',
-    status: 'SUCCESS',
-    verified: true,
-    razorpayOrderId: `demo_order_${Date.now()}`,
-    razorpayPaymentId: `demo_payment_${Date.now()}`,
-  }, { new: true, upsert: true, setDefaultsOnInsert: true });
-
-  const orderKey = idempotencyKey || `order:${userId}:${merchantId}:${pendingOrder.product.id}:${pendingOrder.quantity}`;
-  const existingOrder = await Order.findOne({ idempotencyKey: orderKey }).lean();
-  if (existingOrder) {
-    await Payment.updateOne({ _id: payment._id }, { $set: { orderId: existingOrder._id } });
-    return { payment: { ...payment.toObject ? payment.toObject() : payment, orderId: existingOrder._id.toString() }, order: { ...existingOrder, id: existingOrder._id.toString() }, duplicate: true };
-  }
-
-  const createdOrder = await createOrder({
-    userId,
-    merchantId,
-    pendingOrder,
-    idempotencyKey: orderKey,
-    paymentId: payment._id.toString(),
-    paymentStatus: 'PAID',
-  });
-
-  await Payment.updateOne({ _id: payment._id }, { $set: { orderId: createdOrder.id || createdOrder._id } });
-  return { payment: { ...payment.toObject ? payment.toObject() : payment, orderId: createdOrder.id }, order: createdOrder, duplicate: false };
+  throw Object.assign(new Error('Provider payment verification is required before checkout can be finalized'), { code: 'PAYMENT_VERIFICATION_REQUIRED', status: 409 });
 };
 
 const createOrder = async ({ userId, merchantId, pendingOrder, idempotencyKey, paymentId, paymentStatus = 'PAID' }) => {
@@ -224,4 +222,4 @@ const createOrder = async ({ userId, merchantId, pendingOrder, idempotencyKey, p
   }
 };
 
-module.exports = { getProfile, profileStatus, saveProfile, prepareOrder, createPendingPayment, finalizeVerifiedCheckout, getOrdersForUser, createOrder, validateProfile, profileFields };
+module.exports = { getProfile, profileStatus, saveProfile, prepareOrder, createPendingPayment, verifyAndFinalizePayment, finalizeVerifiedCheckout, getOrdersForUser, createOrder, validateProfile, profileFields };

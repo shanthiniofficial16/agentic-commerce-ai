@@ -20,6 +20,7 @@ const friendlyFieldLabel = (field) => {
 const normalizeProductQuery = (message) => message.replace(/\b(i want to buy|i want|buy|purchase|order|please|the|a|an)\b/gi, ' ').replace(/\s+/g, ' ').trim();
 const normalizeCatalogName = (value = '') => String(value).toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
 const getProductId = (product) => product?._id ? product._id.toString() : product?.id || null;
+const isPendingOrder = (order) => ['AWAITING_APPROVAL', 'PENDING_CONFIRMATION'].includes(order?.state);
 
 const getPreviousProductFromContext = (history = [], context = {}) => {
   if (context.currentProduct) return context.currentProduct;
@@ -380,7 +381,7 @@ const resolveSpecificProductRequest = async ({ message, history = [], context })
         selectedProductId: getProductId(current),
       };
     }
-    if (prepared.state === 'AWAITING_APPROVAL') {
+    if (isPendingOrder(prepared)) {
       const profile = prepared.profile || {};
       const deliveryLine = [profile.fullName, profile.address || [profile.street, profile.building, profile.landmark].filter(Boolean).join(', '), profile.city && profile.state ? `${profile.city}, ${profile.state}` : profile.city || profile.state, profile.pincode, profile.phone].filter(Boolean).join('\n');
       return {
@@ -526,7 +527,7 @@ const runAgent = async ({ message, history = [], context }) => {
           };
         }
 
-        if (prepared.state === 'AWAITING_APPROVAL') {
+        if (isPendingOrder(prepared)) {
           const profile = prepared.profile || {};
           const deliveryLine = [profile.fullName, profile.address || [profile.street, profile.building, profile.landmark].filter(Boolean).join(', '), profile.city && profile.state ? `${profile.city}, ${profile.state}` : profile.city || profile.state, profile.pincode, profile.phone].filter(Boolean).join('\n');
 
@@ -560,7 +561,7 @@ const runAgent = async ({ message, history = [], context }) => {
       if (matchedProduct) {
         const prepared = await executeTool('prepareOrder', { productId: matchedProduct.id, quantity: 1 }, context);
         context.pendingOrder = prepared;
-        if (prepared.state === 'AWAITING_APPROVAL') {
+        if (isPendingOrder(prepared)) {
           const profile = prepared.profile || {};
           const deliveryLine = [profile.fullName, profile.address || [profile.street, profile.building, profile.landmark].filter(Boolean).join(', '), profile.city && profile.state ? `${profile.city}, ${profile.state}` : profile.city || profile.state, profile.pincode, profile.phone].filter(Boolean).join('\n');
           return {
@@ -586,7 +587,7 @@ const runAgent = async ({ message, history = [], context }) => {
     if (resolvedProduct && resolvedProduct.id) {
       const prepared = await executeTool('prepareOrder', { productId: resolvedProduct.id, quantity: 1 }, context);
       context.pendingOrder = prepared;
-      if (prepared.state === 'AWAITING_APPROVAL') {
+      if (isPendingOrder(prepared)) {
         const profile = prepared.profile || {};
         const deliveryLine = [profile.fullName, profile.address || [profile.street, profile.building, profile.landmark].filter(Boolean).join(', '), profile.city && profile.state ? `${profile.city}, ${profile.state}` : profile.city || profile.state, profile.pincode, profile.phone].filter(Boolean).join('\n');
         return {
@@ -660,7 +661,7 @@ const runAgent = async ({ message, history = [], context }) => {
       if (matchedProduct) {
         const prepared = await executeTool('prepareOrder', { productId: matchedProduct.id, quantity: 1 }, context);
         context.pendingOrder = prepared;
-        if (prepared.state === 'AWAITING_APPROVAL') {
+        if (isPendingOrder(prepared)) {
           const profile = prepared.profile || {};
           const deliveryLine = [profile.fullName, profile.address || [profile.street, profile.building, profile.landmark].filter(Boolean).join(', '), profile.city && profile.state ? `${profile.city}, ${profile.state}` : profile.city || profile.state, profile.pincode, profile.phone].filter(Boolean).join('\n');
           return {
@@ -686,7 +687,7 @@ const runAgent = async ({ message, history = [], context }) => {
     if (resolvedProduct && resolvedProduct.id) {
       const prepared = await executeTool('prepareOrder', { productId: resolvedProduct.id, quantity: 1 }, context);
       context.pendingOrder = prepared;
-      if (prepared.state === 'AWAITING_APPROVAL') {
+      if (isPendingOrder(prepared)) {
         const profile = prepared.profile || {};
         const deliveryLine = [profile.fullName, profile.address || [profile.street, profile.building, profile.landmark].filter(Boolean).join(', '), profile.city && profile.state ? `${profile.city}, ${profile.state}` : profile.city || profile.state, profile.pincode, profile.phone].filter(Boolean).join('\n');
         return {

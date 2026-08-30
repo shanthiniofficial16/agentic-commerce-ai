@@ -28,14 +28,44 @@ export function Assistant({ onAdd }) {
       setMessages((items) => [...items, { role: 'agent', text: error.response?.data?.error?.message || error.message || 'Sorry, I could not connect to the shopping assistant right now.' }])
     } finally { setBusy(false) }
   }
-    const placeOrder = async () => { setBusy(true); try { const order = await confirmAgentOrder(sessionId); setOrderPreview(null); setMessages((items) => [...items, { role: 'agent', text: `Your order ${order.id} has been placed successfully. Total: ${money(order.total)}. Status: ${order.status}.` }]) } catch (error) { setMessages((items) => [...items, { role: 'agent', text: error.response?.data?.error?.message || 'I could not place that order.' }]) } finally { setBusy(false) } }
+    const placeOrder = async () => {
+      setBusy(true)
+      try {
+        const result = await confirmAgentOrder(sessionId)
+        if (!result.payment?.razorpayOrderId || !result.payment?.keyId) throw new Error('Secure payment is not configured. No order was created.')
+        if (!window.Razorpay) throw new Error('Secure payment checkout could not be loaded. Please try again.')
+        const checkout = new window.Razorpay({
+          key: result.payment.keyId,
+          amount: result.payment.checkoutAmount,
+          currency: result.payment.currency || 'INR',
+          name: 'AI Commerce',
+          description: orderPreview.product.name,
+          order_id: result.payment.razorpayOrderId,
+          prefill: { name: orderPreview.profile.fullName, email: orderPreview.profile.email, contact: orderPreview.profile.phone },
+          handler: async (paymentResponse) => {
+            try {
+              const verified = await verifyAgentPayment(sessionId, paymentResponse)
+              setOrderPreview(null)
+              setMessages((items) => [...items, { role: 'agent', text: `Payment verified successfully. Your order ${verified.order.id} has been placed.` }])
+            } catch (error) {
+              setMessages((items) => [...items, { role: 'agent', text: error.response?.data?.error?.message || 'Payment could not be verified. Your order has not been marked as paid.' }])
+            } finally { setBusy(false) }
+          },
+          modal: { ondismiss: () => setBusy(false) },
+        })
+        checkout.open()
+      } catch (error) {
+        setMessages((items) => [...items, { role: 'agent', text: error.response?.data?.error?.message || error.message || 'Payment could not be initiated. Your order has not been marked as paid.' }])
+        setBusy(false)
+      }
+    }
     const cancelOrder = async () => { await cancelAgentOrder(sessionId); setOrderPreview(null); setMessages((items) => [...items, { role: 'agent', text: 'The order preview has been cancelled.' }]) }
     return <section className="agent-page"><div className="agent-header"><button className="back-link agent-back" onClick={() => navigate(-1)}><ArrowRight size={16} /> Back to Store</button><div><p className="eyebrow"><Bot size={14} /> AI shopping assistant</p><h1>Find your next favourite.</h1></div><span className="agent-status"><i /> Online / Ready</span></div><div className="agent-layout"><div className="agent-intro"><span className="assistant-avatar"><Bot size={28} /></span><p className="eyebrow">Personal shopping intelligence</p><h2>Ask. Discover.<br /><em>Buy better.</em></h2><p className="muted">Search the live catalogue, compare products, check stock, or manage your cart.</p>{contextProduct && <div className="agent-context"><small>Currently viewing</small><strong>{contextProduct.name}</strong><span>{money(contextProduct.price)}</span></div>}</div><div className="chat-window agent-chat"><div className="chat-messages">{messages.map((message, index) => <div className={`message ${message.role}`} key={`${index}-${message.text}`}><span>{message.role === 'agent' ? <Bot size={15} /> : 'You'}</span><p>{message.text}</p>{message.products?.length > 0 && <div className="chat-products">{message.products.map((product) => <article className="chat-product" key={product.id}><img src={imageFor(product)} alt={product.name} /><div><Link to={`/shop/products/${product.id}`}><strong>{product.name}</strong></Link><p>{money(product.price)}</p><button className="add-button" onClick={() => onAdd({ ...product, _id: product.id })}>Add to cart</button></div></article>)}</div>}</div>)}{orderPreview && <div className="order-preview"><strong>Order Summary</strong><span>{orderPreview.product.name} × {orderPreview.quantity}</span><span>Delivery: {orderPreview.profile.fullName}</span><span>{orderPreview.profile.address}, {orderPreview.profile.city}</span><b>Total: {money(orderPreview.total)}</b><button className="button primary" onClick={placeOrder} disabled={busy}>Place Order</button><button className="button outline" onClick={cancelOrder} disabled={busy}>Cancel</button></div>}{busy && <div className="message agent typing"><span><Bot size={15} /></span><p>Thinking<span className="typing-dots">...</span></p></div>}</div><div className="suggestions">{['Find a laptop under ₹70,000', 'Show me the best headphones', 'What can you help me with?'].map((suggestion) => <button key={suggestion} onClick={() => setInput(suggestion)}>{suggestion}</button>)}</div><form className="chat-form" onSubmit={send}><input value={input} onChange={(event) => setInput(event.target.value)} placeholder="Ask anything about products..." disabled={busy} /><button className="button primary" aria-label="Send" disabled={busy}><ArrowRight size={18} /></button></form></div></div></section>
 }
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { ArrowRight, Bot, Check, ChevronDown, Heart, Minus, Plus, Search, ShoppingBag, Sparkles, Star, Trash2, Truck, X } from 'lucide-react'
-import { addToCart, getCart, getOrders, getProduct, getProducts, removeFromCart, sendAgentMessage, updateCartItem } from '../services/api'
+import { addToCart, cancelAgentOrder, confirmAgentOrder, getCart, getOrders, getProduct, getProducts, removeFromCart, sendAgentMessage, updateCartItem, verifyAgentPayment } from '../services/api'
 import '../Agent.css'
 
 const categories = ['Electronics', 'Fashion', 'Beauty', 'Home & Kitchen', 'Grocery', 'Sports', 'Books', 'Accessories']

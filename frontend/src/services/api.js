@@ -67,9 +67,12 @@ export async function sendAgentMessage(message, sessionId, merchantId, currentPr
 
 export async function confirmAgentOrder(sessionId) {
   const response = await api.post('/api/agent/order/confirm', { sessionId })
-  const payload = response?.data ?? {}
-  const data = payload.data ?? {}
-  return data.order
+  return response?.data?.data ?? {}
+}
+
+export async function verifyAgentPayment(sessionId, paymentResponse) {
+  const response = await api.post('/api/payments/verify', { sessionId, ...paymentResponse })
+  return response?.data?.data ?? {}
 }
 
 export async function cancelAgentOrder(sessionId) {
