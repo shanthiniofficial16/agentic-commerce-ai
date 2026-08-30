@@ -43,7 +43,7 @@ const conversationSchema = new mongoose.Schema(
     },
     orderState: {
       type: String,
-      enum: ['SHOPPING', 'PROFILE_REQUIRED', 'ORDER_PREVIEW', 'AWAITING_APPROVAL', 'ORDER_CREATED', 'CANCELLED'],
+      enum: ['SHOPPING', 'PROFILE_REQUIRED', 'ORDER_PREVIEW', 'PENDING_CONFIRMATION', 'AWAITING_APPROVAL', 'ORDER_CREATED', 'CANCELLED'],
       default: 'SHOPPING',
     },
     pendingOrder: mongoose.Schema.Types.Mixed,

@@ -98,7 +98,7 @@ const prepareOrder = async ({ userId, merchantId, productId, quantity = 1 }) => 
   const profile = await getProfile(userId);
   if (!profile || validateProfile(profile)) return { state: 'PROFILE_REQUIRED', productId: productId.toString(), quantity, requiredFields: [...new Set([...profileStatus(profile).missingFields, ...profileStatus(profile).invalidFields])] };
   if (product.stock < quantity) throw Object.assign(new Error('Product is not available in the requested quantity'), { code: 'OUT_OF_STOCK', status: 409 });
-  return { state: 'AWAITING_APPROVAL', orderPreviewId: `ORDER_PREVIEW_${new mongoose.Types.ObjectId().toString()}`, profile, product: { id: product._id.toString(), name: product.name, price: product.price, currency: product.currency, stock: product.stock }, quantity, total: product.price * quantity, expiresAt: new Date(Date.now() + 15 * 60 * 1000) };
+  return { state: 'PENDING_CONFIRMATION', orderPreviewId: `ORDER_PREVIEW_${new mongoose.Types.ObjectId().toString()}`, profile, product: { id: product._id.toString(), name: product.name, price: product.price, currency: product.currency, stock: product.stock }, quantity, total: product.price * quantity, expiresAt: new Date(Date.now() + 15 * 60 * 1000) };
 };
 
 const createPendingPayment = async ({ userId, merchantId, pendingOrder, idempotencyKey }) => {
