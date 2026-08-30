@@ -187,7 +187,7 @@ const executeTool = async (name, rawArgs, context) => {
   }
   if (name === 'prepareOrder') {
     const result = await prepareOrder({ userId, merchantId, productId: validId(args.productId, 'productId'), quantity: Number(args.quantity) });
-    context.pendingOrder = result.state === 'AWAITING_APPROVAL' ? result : null;
+    context.pendingOrder = ['AWAITING_APPROVAL', 'PENDING_CONFIRMATION'].includes(result?.state) ? result : null;
     return result;
   }
   throw new Error('Unsupported agent tool');
