@@ -34,7 +34,7 @@ export function Assistant({ onAdd, onNotify }) {
         const result = await confirmAgentOrder(sessionId); 
         setOrderPreview(null); 
         const order = result.order
-        if (!result.duplicate && order) onNotify?.(`🎉 Order placed successfully! Order ID: #${order.id} · ${order.productName} · ${money(order.total)} · Payment: Demo Checkout Completed`)
+        if (!result.duplicate && order) onNotify?.(`🎉 Order placed successfully! Order ID: #${order.id} · ${order.productName} · ${money(order.total)} · Payment: Successful · Expected Delivery: ${new Date(order.estimatedDeliveryDate).toLocaleDateString('en-US', { dateStyle: 'long' })}`)
         setMessages((items) => [...items, { role: 'agent', text: result.message || `I confirm the order and I have paid for it.\nOrder ID: ${order?.id || 'created'}` }]); 
       } catch (error) { 
         setMessages((items) => [...items, { role: 'agent', text: error.response?.data?.error?.message || 'I could not place that order.' }]); 
