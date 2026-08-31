@@ -3,7 +3,6 @@ const User = require('../models/User');
 const Order = require('../models/Order');
 const Payment = require('../models/Payment');
 const Product = require('../models/Product');
-const { createOrder: createRazorpayOrder, verifySignature, fetchPayment } = require('./razorpay.provider');
 
 const profileFields = ['fullName', 'phone', 'email', 'street', 'city', 'state', 'pincode'];
 const normalizeProfile = (value = {}) => {
@@ -103,6 +102,7 @@ const prepareOrder = async ({ userId, merchantId, productId, quantity = 1 }) => 
 };
 
 const createPendingPayment = async ({ userId, merchantId, pendingOrder, idempotencyKey }) => {
+  const { createOrder: createRazorpayOrder } = require('./razorpay.provider');
   if (!pendingOrder?.product?.id) throw Object.assign(new Error('No pending order to pay for'), { code: 'ORDER_NOT_READY', status: 409 });
   const profile = await getProfile(userId);
   if (!profile || validateProfile(profile)) throw Object.assign(new Error('Complete delivery details are required before checkout'), { code: 'PROFILE_REQUIRED', status: 400 });
@@ -163,6 +163,7 @@ const createPendingPayment = async ({ userId, merchantId, pendingOrder, idempote
 };
 
 const verifyAndFinalizePayment = async ({ userId, merchantId, pendingOrder, razorpayOrderId, razorpayPaymentId, razorpaySignature, idempotencyKey }) => {
+  const { verifySignature, fetchPayment } = require('./razorpay.provider');
   if (!pendingOrder?.product?.id || !razorpayOrderId || !razorpayPaymentId || !razorpaySignature) throw Object.assign(new Error('Incomplete payment verification details'), { code: 'PAYMENT_VERIFICATION_INVALID', status: 400 });
   if (!verifySignature({ orderId: razorpayOrderId, paymentId: razorpayPaymentId, signature: razorpaySignature })) throw Object.assign(new Error('Payment signature verification failed'), { code: 'PAYMENT_VERIFICATION_FAILED', status: 400 });
   const paymentRecord = await Payment.findOne({ userId, merchantId, razorpayOrderId, idempotencyKey });
