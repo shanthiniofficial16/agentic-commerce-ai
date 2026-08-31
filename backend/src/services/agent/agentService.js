@@ -781,7 +781,7 @@ const runAgent = async ({ message, history = [], context }) => {
     messages.push(assistant);
     if (!assistant.tool_calls?.length) {
       console.log('[Agent] Sending final response');
-      return { text: assistant.content || 'I could not find an answer for that request.', products, pendingOrder: context.pendingOrder, selectedProductId: getProductId(referencedProduct || currentProduct || context.currentProduct) };
+      return { text: assistant.content || 'I could not find an answer for that request.', products, pendingOrder: context.pendingOrder, selectedProductId: getProductId(previousProduct || currentProduct || context.currentProduct) };
     }
     for (const call of assistant.tool_calls) {
       console.log(`[Agent] Tool requested: ${call.function.name}`);

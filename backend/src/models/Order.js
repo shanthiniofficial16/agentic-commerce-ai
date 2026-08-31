@@ -60,6 +60,9 @@ const orderSchema = new mongoose.Schema(
       enum: ['DEMO_PAID', 'PENDING', 'PAID', 'FAILED'],
       default: 'DEMO_PAID',
     },
+    estimatedDeliveryDate: {
+      type: Date,
+    },
     razorpayOrderId: {
       type: String,
     },

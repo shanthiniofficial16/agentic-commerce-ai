@@ -5,6 +5,13 @@ const Payment = require('../models/Payment');
 const Product = require('../models/Product');
 const Cart = require('../models/Cart');
 
+const getEstimatedDeliveryDate = (createdAt = new Date()) => {
+  const deliveryDays = Number.parseInt(process.env.ESTIMATED_DELIVERY_DAYS || '5', 10);
+  const estimatedDate = new Date(createdAt);
+  estimatedDate.setDate(estimatedDate.getDate() + (Number.isFinite(deliveryDays) && deliveryDays >= 0 ? deliveryDays : 5));
+  return estimatedDate;
+};
+
 const profileFields = ['fullName', 'phone', 'email', 'street', 'city', 'state', 'pincode'];
 const normalizeProfile = (value = {}) => {
   const profile = { ...value };
@@ -86,6 +93,7 @@ const getOrdersForUser = async (userId, merchantId) => {
     currency: order.currency,
     status: order.status,
     paymentStatus: order.paymentStatus || (order.status === 'PAID' ? 'PAID' : order.status === 'PENDING_PAYMENT' ? 'PENDING' : 'FAILED'),
+    estimatedDeliveryDate: order.estimatedDeliveryDate,
     createdAt: order.createdAt,
     delivery: order.delivery,
     items: order.items || [],
@@ -222,7 +230,7 @@ const createOrder = async ({ userId, merchantId, pendingOrder, idempotencyKey, p
   if (pendingOrder.expiresAt && new Date(pendingOrder.expiresAt) < new Date()) throw Object.assign(new Error('This order preview has expired. Please prepare it again.'), { code: 'ORDER_PREVIEW_EXPIRED', status: 409 });
   const orderKey = idempotencyKey || `order:${userId}:${merchantId}:${pendingOrder.product.id}:${pendingOrder.quantity}`;
   const existing = await Order.findOne({ idempotencyKey: orderKey }).lean();
-  if (existing) return { id: existing._id.toString(), productName: existing.items[0]?.productName, quantity: existing.items[0]?.quantity, total: existing.total, currency: existing.currency, status: existing.status, paymentStatus: existing.paymentStatus, delivery: existing.delivery, duplicate: true };
+  if (existing) return { id: existing._id.toString(), productName: existing.items[0]?.productName, quantity: existing.items.reduce((sum, item) => sum + item.quantity, 0), total: existing.total, currency: existing.currency, status: existing.status, paymentStatus: existing.paymentStatus, estimatedDeliveryDate: existing.estimatedDeliveryDate, delivery: existing.delivery, items: existing.items, duplicate: true };
 
   const profile = await getProfile(userId);
   if (!profile || validateProfile(profile)) throw Object.assign(new Error('Complete delivery details are required'), { code: 'PROFILE_REQUIRED', status: 400 });
@@ -248,6 +256,7 @@ const createOrder = async ({ userId, merchantId, pendingOrder, idempotencyKey, p
       idempotencyKey: orderKey,
       paymentId: paymentId ? new mongoose.Types.ObjectId(paymentId) : undefined,
       paymentStatus,
+      estimatedDeliveryDate: getEstimatedDeliveryDate(),
       razorpayOrderId: pendingOrder.payment?.razorpayOrderId,
       items: orderItems,
       subtotal: orderTotal,
@@ -256,12 +265,12 @@ const createOrder = async ({ userId, merchantId, pendingOrder, idempotencyKey, p
       delivery: profile,
       status,
     });
-    return { id: order._id.toString(), productName: products[0].name, quantity: orderItems.reduce((sum, item) => sum + item.quantity, 0), total: order.total, currency: order.currency, status: order.status, paymentStatus: order.paymentStatus, delivery: profile, items: orderItems, duplicate: false };
+    return { id: order._id.toString(), productName: products[0].name, quantity: orderItems.reduce((sum, item) => sum + item.quantity, 0), total: order.total, currency: order.currency, status: order.status, paymentStatus: order.paymentStatus, estimatedDeliveryDate: order.estimatedDeliveryDate, delivery: profile, items: orderItems, duplicate: false };
   } catch (error) {
     for (const reserved of products) await Product.updateOne({ _id: reserved._id }, { $inc: { stock: reserved.quantity } });
     if (error.code === 11000 && orderKey) {
       const existing = await Order.findOne({ idempotencyKey: orderKey }).lean();
-      if (existing) return { id: existing._id.toString(), productName: existing.items[0]?.productName, quantity: existing.items[0]?.quantity, total: existing.total, currency: existing.currency, status: existing.status, paymentStatus: existing.paymentStatus, delivery: existing.delivery, duplicate: true };
+      if (existing) return { id: existing._id.toString(), productName: existing.items[0]?.productName, quantity: existing.items.reduce((sum, item) => sum + item.quantity, 0), total: existing.total, currency: existing.currency, status: existing.status, paymentStatus: existing.paymentStatus, estimatedDeliveryDate: existing.estimatedDeliveryDate, delivery: existing.delivery, items: existing.items, duplicate: true };
     }
     throw error;
   }
