@@ -70,11 +70,6 @@ export async function confirmAgentOrder(sessionId) {
   return response?.data?.data ?? {}
 }
 
-export async function verifyAgentPayment(sessionId, paymentResponse) {
-  const response = await api.post('/api/payments/verify', { sessionId, ...paymentResponse })
-  return response?.data?.data ?? {}
-}
-
 export async function cancelAgentOrder(sessionId) {
   const response = await api.post('/api/agent/order/cancel', { sessionId })
   const payload = response?.data ?? {}

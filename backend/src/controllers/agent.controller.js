@@ -3,7 +3,7 @@ const Conversation = require('../models/Conversation');
 const Merchant = require('../models/Merchant');
 const Product = require('../models/Product');
 const { runAgent, isPurchaseIntent } = require('../services/agent/agentService');
-const { createPendingPayment } = require('../services/order.service');
+const { createOrder } = require('../services/order.service');
 const { sanitizeErrorPayload } = require('../utils/errorMessageMap');
 
 const normalizeDecisionMessage = (message) => typeof message === 'string' ? message.trim() : '';
@@ -97,9 +97,6 @@ const chat = async (req, res) => {
     const parsedDecision = parseConfirmationResponse(message);
     // Purchase phrases such as "Buy it" start checkout unless a preview already exists.
     const confirmationDecision = !hasPendingOrder && isPurchaseIntent(message) ? 'pending' : parsedDecision;
-    if (conversation.orderState === 'PAYMENT_PENDING' && conversation.pendingOrder?.payment) {
-      return res.json({ success: true, data: { message: 'Checkout is confirmed, but payment is still pending. Complete the secure Razorpay payment to place your order.', sessionId: conversation.sessionId, payment: conversation.pendingOrder.payment } });
-    }
     if (confirmationDecision !== 'pending') {
       if (!isPendingConfirmationState(conversation.orderState) || !conversation.pendingOrder) {
         return res.status(409).json({ success: false, error: { code: 'ORDER_NOT_READY', message: 'There is no order preview awaiting confirmation. Say “Buy this” first to prepare checkout, then reply “Yes”.' } });
@@ -111,17 +108,18 @@ const chat = async (req, res) => {
         return res.json({ success: true, data: { message: 'The order was cancelled.', sessionId: conversation.sessionId, cancelled: true } });
       }
 
-      const payment = await createPendingPayment({
+      const order = await createOrder({
         userId: req.userId,
         merchantId: conversation.merchantId,
         pendingOrder: conversation.pendingOrder,
         idempotencyKey: `agent:${req.userId}:${conversation.sessionId}`,
+        paymentStatus: 'DEMO_PAID',
       });
 
-      conversation.orderState = 'PAYMENT_PENDING';
-      conversation.pendingOrder = { ...conversation.pendingOrder, payment };
+      conversation.orderState = 'ORDER_CREATED';
+      conversation.pendingOrder = { createdOrder: order };
       await conversation.save();
-      return res.json({ success: true, data: { message: 'Checkout confirmed. Payment is pending. Complete payment through the secure Razorpay checkout to place your order.', payment, sessionId: conversation.sessionId } });
+      return res.json({ success: true, data: { message: `I confirm the order and I have paid for it.\nOrder ID: ${order.id}`, order, sessionId: conversation.sessionId } });
     }
 
     if (isPendingConfirmationState(conversation.orderState) && conversation.pendingOrder) {
@@ -193,11 +191,11 @@ const confirmOrder = async (req, res) => {
     if (!conversation) return res.status(404).json({ success: false, error: { code: 'SESSION_NOT_FOUND', message: 'Order session not found' } });
     if (conversation.orderState === 'ORDER_CREATED' && conversation.pendingOrder?.createdOrder) return res.json({ success: true, data: { order: conversation.pendingOrder.createdOrder, duplicate: true } });
     if (!isPendingConfirmationState(conversation.orderState) || !conversation.pendingOrder) return res.status(409).json({ success: false, error: { code: 'ORDER_NOT_READY', message: 'No order preview is awaiting approval' } });
-    const payment = await createPendingPayment({ userId: req.userId, merchantId: conversation.merchantId, pendingOrder: conversation.pendingOrder, idempotencyKey: `agent:${req.userId}:${conversation.sessionId}` });
-    conversation.orderState = 'PAYMENT_PENDING';
-    conversation.pendingOrder = { ...conversation.pendingOrder, payment };
+    const order = await createOrder({ userId: req.userId, merchantId: conversation.merchantId, pendingOrder: conversation.pendingOrder, idempotencyKey: `agent:${req.userId}:${conversation.sessionId}`, paymentStatus: 'DEMO_PAID' });
+    conversation.orderState = 'ORDER_CREATED';
+    conversation.pendingOrder = { createdOrder: order };
     await conversation.save();
-    return res.json({ success: true, data: { payment, sessionId: conversation.sessionId } });
+    return res.json({ success: true, data: { order, message: `I confirm the order and I have paid for it.\nOrder ID: ${order.id}`, sessionId: conversation.sessionId } });
   } catch (error) {
     console.error('Confirm order error:', error.message);
     const safe = sanitizeErrorPayload(error, 'The order could not be placed right now. Please try again.');

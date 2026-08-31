@@ -55,6 +55,11 @@ const orderSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Payment',
     },
+    paymentStatus: {
+      type: String,
+      enum: ['DEMO_PAID', 'PENDING', 'PAID', 'FAILED'],
+      default: 'DEMO_PAID',
+    },
     razorpayOrderId: {
       type: String,
     },

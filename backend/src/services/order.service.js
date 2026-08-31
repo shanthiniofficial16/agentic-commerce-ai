@@ -85,7 +85,7 @@ const getOrdersForUser = async (userId, merchantId) => {
     total: order.total,
     currency: order.currency,
     status: order.status,
-    paymentStatus: order.status === 'PAID' ? 'Successful' : order.status === 'PENDING_PAYMENT' ? 'Pending' : 'Failed',
+    paymentStatus: order.paymentStatus || (order.status === 'PAID' ? 'PAID' : order.status === 'PENDING_PAYMENT' ? 'PENDING' : 'FAILED'),
     createdAt: order.createdAt,
     delivery: order.delivery,
     items: order.items || [],
@@ -204,7 +204,7 @@ const createOrder = async ({ userId, merchantId, pendingOrder, idempotencyKey, p
   if (pendingOrder.expiresAt && new Date(pendingOrder.expiresAt) < new Date()) throw Object.assign(new Error('This order preview has expired. Please prepare it again.'), { code: 'ORDER_PREVIEW_EXPIRED', status: 409 });
   const orderKey = idempotencyKey || `order:${userId}:${merchantId}:${pendingOrder.product.id}:${pendingOrder.quantity}`;
   const existing = await Order.findOne({ idempotencyKey: orderKey }).lean();
-  if (existing) return { id: existing._id.toString(), productName: existing.items[0]?.productName, quantity: existing.items[0]?.quantity, total: existing.total, currency: existing.currency, status: existing.status, delivery: existing.delivery, duplicate: true };
+  if (existing) return { id: existing._id.toString(), productName: existing.items[0]?.productName, quantity: existing.items[0]?.quantity, total: existing.total, currency: existing.currency, status: existing.status, paymentStatus: existing.paymentStatus, delivery: existing.delivery, duplicate: true };
 
   const profile = await getProfile(userId);
   if (!profile || validateProfile(profile)) throw Object.assign(new Error('Complete delivery details are required'), { code: 'PROFILE_REQUIRED', status: 400 });
@@ -215,12 +215,14 @@ const createOrder = async ({ userId, merchantId, pendingOrder, idempotencyKey, p
     throw Object.assign(new Error(`The price has changed from ${pendingOrder.product.price} to ${product.price}. Please prepare the order again.`), { code: 'PRICE_CHANGED', status: 409 });
   }
   try {
-    const status = paymentStatus === 'PAID' ? 'PAID' : 'PENDING_PAYMENT';
+    const isDemoPayment = paymentStatus === 'DEMO_PAID';
+    const status = isDemoPayment ? 'COMPLETED' : paymentStatus === 'PAID' ? 'PAID' : 'PENDING_PAYMENT';
     const order = await Order.create({
       userId,
       merchantId,
       idempotencyKey: orderKey,
       paymentId: paymentId ? new mongoose.Types.ObjectId(paymentId) : undefined,
+      paymentStatus,
       razorpayOrderId: pendingOrder.payment?.razorpayOrderId,
       items: [{ productId: product._id, productName: product.name, quantity: pendingOrder.quantity, price: product.price }],
       subtotal: product.price * pendingOrder.quantity,
@@ -229,12 +231,12 @@ const createOrder = async ({ userId, merchantId, pendingOrder, idempotencyKey, p
       delivery: profile,
       status,
     });
-    return { id: order._id.toString(), productName: product.name, quantity: pendingOrder.quantity, total: order.total, currency: order.currency, status: order.status, delivery: profile, duplicate: false };
+    return { id: order._id.toString(), productName: product.name, quantity: pendingOrder.quantity, total: order.total, currency: order.currency, status: order.status, paymentStatus: order.paymentStatus, delivery: profile, duplicate: false };
   } catch (error) {
     await Product.updateOne({ _id: product._id }, { $inc: { stock: pendingOrder.quantity } });
     if (error.code === 11000 && orderKey) {
       const existing = await Order.findOne({ idempotencyKey: orderKey }).lean();
-      if (existing) return { id: existing._id.toString(), productName: existing.items[0]?.productName, quantity: existing.items[0]?.quantity, total: existing.total, currency: existing.currency, status: existing.status, delivery: existing.delivery, duplicate: true };
+      if (existing) return { id: existing._id.toString(), productName: existing.items[0]?.productName, quantity: existing.items[0]?.quantity, total: existing.total, currency: existing.currency, status: existing.status, paymentStatus: existing.paymentStatus, delivery: existing.delivery, duplicate: true };
     }
     throw error;
   }
