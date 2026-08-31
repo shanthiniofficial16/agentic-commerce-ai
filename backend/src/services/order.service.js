@@ -110,28 +110,33 @@ const createPendingPayment = async ({ userId, merchantId, pendingOrder, idempote
   if (!product) throw Object.assign(new Error('Product not found'), { code: 'PRODUCT_NOT_FOUND', status: 404 });
   const paymentKey = idempotencyKey || `payment:${userId}:${merchantId}:${pendingOrder.product.id}:${pendingOrder.quantity}`;
   const existing = await Payment.findOne({ idempotencyKey: paymentKey }).lean();
-  if (existing) {
-    return {
-      paymentId: existing._id.toString(),
-      status: existing.status,
-      verified: existing.verified,
-      amount: existing.amount,
-      currency: existing.currency,
-      orderId: existing.orderId ? existing.orderId.toString() : null,
-      razorpayOrderId: existing.razorpayOrderId,
-      keyId: process.env.RAZORPAY_KEY_ID,
-    };
+  if (existing && ['PENDING', 'INITIATED', 'PROCESSING'].includes(existing.status)) {
+      return {
+        paymentId: existing._id.toString(),
+        status: existing.status,
+        verified: existing.verified,
+        amount: existing.amount,
+        currency: existing.currency,
+        orderId: existing.orderId ? existing.orderId.toString() : null,
+        razorpayOrderId: existing.razorpayOrderId,
+        keyId: process.env.RAZORPAY_KEY_ID,
+      };
   }
   const amount = Number(product.price) * Number(pendingOrder.quantity || 1);
-  const payment = await Payment.create({
-    userId,
-    merchantId,
-    amount,
-    currency: product.currency || 'INR',
-    status: 'INITIATED',
-    verified: false,
-    idempotencyKey: paymentKey,
-  });
+    const payment = existing
+      ? await Payment.findOneAndUpdate({ _id: existing._id }, {
+        $set: { userId, merchantId, amount, currency: product.currency || 'INR', status: 'PENDING', verified: false },
+        $unset: { failureReason: '', razorpayOrderId: '', razorpayPaymentId: '', orderId: '' },
+      }, { new: true })
+      : await Payment.create({
+        userId,
+        merchantId,
+        amount,
+        currency: product.currency || 'INR',
+        status: 'PENDING',
+        verified: false,
+        idempotencyKey: paymentKey,
+      });
   let provider;
   try {
     provider = await createRazorpayOrder({ amount, currency: product.currency || 'INR', receipt: paymentKey.slice(0, 40) });
@@ -161,7 +166,19 @@ const verifyAndFinalizePayment = async ({ userId, merchantId, pendingOrder, razo
   if (!pendingOrder?.product?.id || !razorpayOrderId || !razorpayPaymentId || !razorpaySignature) throw Object.assign(new Error('Incomplete payment verification details'), { code: 'PAYMENT_VERIFICATION_INVALID', status: 400 });
   if (!verifySignature({ orderId: razorpayOrderId, paymentId: razorpayPaymentId, signature: razorpaySignature })) throw Object.assign(new Error('Payment signature verification failed'), { code: 'PAYMENT_VERIFICATION_FAILED', status: 400 });
   const paymentRecord = await Payment.findOne({ userId, merchantId, razorpayOrderId, idempotencyKey });
+  if (!paymentRecord) {
+    const verifiedPayment = await Payment.findOne({ userId, merchantId, razorpayPaymentId, status: 'VERIFIED_SUCCESS' }).lean();
+    if (verifiedPayment?.orderId) {
+      const existingOrder = await Order.findById(verifiedPayment.orderId).lean();
+      if (existingOrder) return { payment: verifiedPayment, order: { ...existingOrder, id: existingOrder._id.toString() }, duplicate: true };
+    }
+  }
   if (!paymentRecord) throw Object.assign(new Error('Payment transaction not found'), { code: 'PAYMENT_NOT_FOUND', status: 404 });
+  if (paymentRecord.razorpayOrderId !== razorpayOrderId) throw Object.assign(new Error('Payment order does not match the checkout session'), { code: 'PAYMENT_VERIFICATION_FAILED', status: 400 });
+  if (paymentRecord.status === 'VERIFIED_SUCCESS' && paymentRecord.orderId) {
+    const existingOrder = await Order.findById(paymentRecord.orderId).lean();
+    if (existingOrder) return { payment: paymentRecord.toObject(), order: { ...existingOrder, id: existingOrder._id.toString() }, duplicate: true };
+  }
   const providerPayment = await fetchPayment(razorpayPaymentId);
   if (!['captured', 'authorized'].includes(providerPayment.status)) {
     paymentRecord.status = 'FAILED';
@@ -204,6 +221,7 @@ const createOrder = async ({ userId, merchantId, pendingOrder, idempotencyKey, p
       merchantId,
       idempotencyKey: orderKey,
       paymentId: paymentId ? new mongoose.Types.ObjectId(paymentId) : undefined,
+      razorpayOrderId: pendingOrder.payment?.razorpayOrderId,
       items: [{ productId: product._id, productName: product.name, quantity: pendingOrder.quantity, price: product.price }],
       subtotal: product.price * pendingOrder.quantity,
       total: product.price * pendingOrder.quantity,
