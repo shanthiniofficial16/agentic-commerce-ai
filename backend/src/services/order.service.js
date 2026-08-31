@@ -3,6 +3,7 @@ const User = require('../models/User');
 const Order = require('../models/Order');
 const Payment = require('../models/Payment');
 const Product = require('../models/Product');
+const Cart = require('../models/Cart');
 
 const profileFields = ['fullName', 'phone', 'email', 'street', 'city', 'state', 'pincode'];
 const normalizeProfile = (value = {}) => {
@@ -99,6 +100,22 @@ const prepareOrder = async ({ userId, merchantId, productId, quantity = 1 }) => 
   if (!profile || validateProfile(profile)) return { state: 'PROFILE_REQUIRED', productId: productId.toString(), quantity, requiredFields: [...new Set([...profileStatus(profile).missingFields, ...profileStatus(profile).invalidFields])] };
   if (product.stock < quantity) throw Object.assign(new Error('Product is not available in the requested quantity'), { code: 'OUT_OF_STOCK', status: 409 });
   return { state: 'PENDING_CONFIRMATION', orderPreviewId: `ORDER_PREVIEW_${new mongoose.Types.ObjectId().toString()}`, profile, product: { id: product._id.toString(), name: product.name, price: product.price, currency: product.currency, stock: product.stock }, quantity, total: product.price * quantity, expiresAt: new Date(Date.now() + 15 * 60 * 1000) };
+};
+
+const prepareCartOrder = async ({ userId, merchantId }) => {
+  const cart = await Cart.findOne({ userId, merchantId, status: 'ACTIVE' }).lean();
+  if (!cart?.items?.length) throw Object.assign(new Error('Your cart is empty'), { code: 'CART_EMPTY', status: 400 });
+  const profile = await getProfile(userId);
+  if (!profile || validateProfile(profile)) return { state: 'PROFILE_REQUIRED', requiredFields: [...new Set([...profileStatus(profile).missingFields, ...profileStatus(profile).invalidFields])] };
+  const items = [];
+  for (const item of cart.items) {
+    if (!Number.isInteger(item.quantity) || item.quantity < 1 || item.quantity > 100) throw Object.assign(new Error('Invalid cart quantity'), { code: 'ORDER_INVALID', status: 400 });
+    const product = await Product.findOne({ _id: item.productId, merchantId, active: true }).lean();
+    if (!product) throw Object.assign(new Error('A cart product is no longer available'), { code: 'PRODUCT_NOT_FOUND', status: 404 });
+    if (product.stock < item.quantity) throw Object.assign(new Error(`${product.name} is not available in the requested quantity`), { code: 'OUT_OF_STOCK', status: 409 });
+    items.push({ productId: product._id.toString(), name: product.name, price: product.price, currency: product.currency, quantity: item.quantity, stock: product.stock });
+  }
+  return { state: 'PENDING_CONFIRMATION', orderPreviewId: `ORDER_PREVIEW_${new mongoose.Types.ObjectId().toString()}`, profile, items, product: { id: items[0].productId, name: items[0].name, price: items[0].price, currency: items[0].currency, quantity: items[0].quantity, stock: items[0].stock }, quantity: items[0].quantity, total: items.reduce((sum, item) => sum + item.price * item.quantity, 0), expiresAt: new Date(Date.now() + 15 * 60 * 1000) };
 };
 
 const createPendingPayment = async ({ userId, merchantId, pendingOrder, idempotencyKey }) => {
@@ -209,12 +226,19 @@ const createOrder = async ({ userId, merchantId, pendingOrder, idempotencyKey, p
 
   const profile = await getProfile(userId);
   if (!profile || validateProfile(profile)) throw Object.assign(new Error('Complete delivery details are required'), { code: 'PROFILE_REQUIRED', status: 400 });
-  const product = await Product.findOneAndUpdate({ _id: pendingOrder.product.id, merchantId, active: true, stock: { $gte: pendingOrder.quantity } }, { $inc: { stock: -pendingOrder.quantity } }, { new: true }).lean();
-  if (!product) throw Object.assign(new Error('Product is no longer available in the requested quantity'), { code: 'OUT_OF_STOCK', status: 409 });
-  if (product.price !== pendingOrder.product.price) {
-    await Product.updateOne({ _id: product._id }, { $inc: { stock: pendingOrder.quantity } });
-    throw Object.assign(new Error(`The price has changed from ${pendingOrder.product.price} to ${product.price}. Please prepare the order again.`), { code: 'PRICE_CHANGED', status: 409 });
+  const requestedItems = pendingOrder.items || [{ productId: pendingOrder.product.id, name: pendingOrder.product.name, price: pendingOrder.product.price, quantity: pendingOrder.quantity }];
+  const products = [];
+  for (const item of requestedItems) {
+    const product = await Product.findOneAndUpdate({ _id: item.productId, merchantId, active: true, stock: { $gte: item.quantity } }, { $inc: { stock: -item.quantity } }, { new: true }).lean();
+    if (!product || product.price !== item.price) {
+      for (const reserved of products) await Product.updateOne({ _id: reserved._id }, { $inc: { stock: reserved.quantity } });
+      if (product) await Product.updateOne({ _id: product._id }, { $inc: { stock: item.quantity } });
+      throw Object.assign(new Error(product ? `The price of ${product.name} changed while preparing the order. Please try again.` : 'A product is no longer available in the requested quantity'), { code: product ? 'PRICE_CHANGED' : 'OUT_OF_STOCK', status: 409 });
+    }
+    products.push({ ...product, quantity: item.quantity });
   }
+  const orderItems = products.map((product) => ({ productId: product._id, productName: product.name, quantity: product.quantity, price: product.price }));
+  const orderTotal = orderItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
   try {
     const isDemoPayment = paymentStatus === 'DEMO_PAID';
     const status = isDemoPayment ? 'COMPLETED' : paymentStatus === 'PAID' ? 'PAID' : 'PENDING_PAYMENT';
@@ -225,16 +249,16 @@ const createOrder = async ({ userId, merchantId, pendingOrder, idempotencyKey, p
       paymentId: paymentId ? new mongoose.Types.ObjectId(paymentId) : undefined,
       paymentStatus,
       razorpayOrderId: pendingOrder.payment?.razorpayOrderId,
-      items: [{ productId: product._id, productName: product.name, quantity: pendingOrder.quantity, price: product.price }],
-      subtotal: product.price * pendingOrder.quantity,
-      total: product.price * pendingOrder.quantity,
-      currency: product.currency,
+      items: orderItems,
+      subtotal: orderTotal,
+      total: orderTotal,
+      currency: products[0].currency,
       delivery: profile,
       status,
     });
-    return { id: order._id.toString(), productName: product.name, quantity: pendingOrder.quantity, total: order.total, currency: order.currency, status: order.status, paymentStatus: order.paymentStatus, delivery: profile, duplicate: false };
+    return { id: order._id.toString(), productName: products[0].name, quantity: orderItems.reduce((sum, item) => sum + item.quantity, 0), total: order.total, currency: order.currency, status: order.status, paymentStatus: order.paymentStatus, delivery: profile, items: orderItems, duplicate: false };
   } catch (error) {
-    await Product.updateOne({ _id: product._id }, { $inc: { stock: pendingOrder.quantity } });
+    for (const reserved of products) await Product.updateOne({ _id: reserved._id }, { $inc: { stock: reserved.quantity } });
     if (error.code === 11000 && orderKey) {
       const existing = await Order.findOne({ idempotencyKey: orderKey }).lean();
       if (existing) return { id: existing._id.toString(), productName: existing.items[0]?.productName, quantity: existing.items[0]?.quantity, total: existing.total, currency: existing.currency, status: existing.status, paymentStatus: existing.paymentStatus, delivery: existing.delivery, duplicate: true };
@@ -243,4 +267,4 @@ const createOrder = async ({ userId, merchantId, pendingOrder, idempotencyKey, p
   }
 };
 
-module.exports = { getProfile, profileStatus, saveProfile, prepareOrder, createPendingPayment, verifyAndFinalizePayment, finalizeVerifiedCheckout, getOrdersForUser, createOrder, validateProfile, profileFields };
+module.exports = { getProfile, profileStatus, saveProfile, prepareOrder, prepareCartOrder, createPendingPayment, verifyAndFinalizePayment, finalizeVerifiedCheckout, getOrdersForUser, createOrder, validateProfile, profileFields };

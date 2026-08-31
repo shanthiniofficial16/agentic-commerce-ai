@@ -504,6 +504,22 @@ const runAgent = async ({ message, history = [], context }) => {
   }
 
   if (isPurchaseIntent(message)) {
+    if (/\b(it|cart|everything|all)\b/i.test(message)) {
+      const cart = await executeTool('getCart', {}, context);
+      if (cart?.cart?.items?.length) {
+        const prepared = await executeTool('prepareCartOrder', {}, context);
+        if (prepared.state === 'PROFILE_REQUIRED') {
+          return { text: `I need your ${friendlyFieldLabel(prepared.requiredFields?.[0])} to complete this order before checkout.`, products: [], pendingOrder: prepared };
+        }
+        const lines = prepared.items.map((item) => `${item.name}: ₹${Number(item.price).toLocaleString('en-IN')} × ${item.quantity}`);
+        return {
+          text: `${lines.join('\n')}\nTotal: ₹${Number(prepared.total).toLocaleString('en-IN')}\n\nDo you want to confirm your order? Yes / No`,
+          products: [],
+          pendingOrder: prepared,
+          selectedProductId: prepared.items[0].productId,
+        };
+      }
+    }
     const purchaseTarget = currentProduct || await resolveReferencedProduct({ message, history, context }) || (() => {
       const previousProduct = [...history].reverse().find((item) => item.metadata?.products?.length)?.metadata.products[0];
       return previousProduct ? { id: previousProduct.id, _id: previousProduct.id, name: previousProduct.name } : null;

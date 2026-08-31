@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 const Cart = require('../../models/Cart');
 const Order = require('../../models/Order');
 const Product = require('../../models/Product');
-const { createOrder, getProfile, profileStatus, prepareOrder, saveProfile, profileFields } = require('../order.service');
+const { createOrder, getProfile, profileStatus, prepareOrder, prepareCartOrder, saveProfile, profileFields } = require('../order.service');
 
 const productView = (product) => ({
   id: product._id.toString(),
@@ -88,6 +88,10 @@ const tools = [
   {
     type: 'function',
     function: { name: 'prepareOrder', description: 'Prepare an order preview using current database price, inventory, and saved delivery profile. Does not create an order.', parameters: { type: 'object', required: ['productId', 'quantity'], properties: { productId: { type: 'string' }, quantity: { type: 'integer', minimum: 1, maximum: 100 } } } },
+  },
+  {
+    type: 'function',
+    function: { name: 'prepareCartOrder', description: 'Prepare an order preview for every item in the authenticated customer cart using current database price, inventory, and saved delivery profile.', parameters: { type: 'object', properties: {} } },
   },
 ];
 
@@ -188,6 +192,11 @@ const executeTool = async (name, rawArgs, context) => {
   if (name === 'prepareOrder') {
     const result = await prepareOrder({ userId, merchantId, productId: validId(args.productId, 'productId'), quantity: Number(args.quantity) });
     context.pendingOrder = ['AWAITING_APPROVAL', 'PENDING_CONFIRMATION'].includes(result?.state) ? result : null;
+    return result;
+  }
+  if (name === 'prepareCartOrder') {
+    const result = await prepareCartOrder({ userId, merchantId });
+    context.pendingOrder = result;
     return result;
   }
   throw new Error('Unsupported agent tool');
