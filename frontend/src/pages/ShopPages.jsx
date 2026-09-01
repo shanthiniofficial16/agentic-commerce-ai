@@ -23,6 +23,7 @@ export function Assistant({ onAdd, onNotify }) {
         role: 'agent',
         text: typeof result?.message === 'string' && result.message.trim() ? result.message : 'I could not generate a response for that request.',
         products: Array.isArray(result?.products) ? result.products : [],
+        action: result?.viewOrderPath ? { label: 'View My Order', path: result.viewOrderPath } : null,
       }])
     } catch (error) {
       setMessages((items) => [...items, { role: 'agent', text: error.response?.data?.error?.message || error.message || 'Sorry, I could not connect to the shopping assistant right now.' }])

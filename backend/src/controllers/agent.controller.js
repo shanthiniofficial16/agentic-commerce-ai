@@ -120,7 +120,7 @@ const chat = async (req, res) => {
       conversation.orderState = 'ORDER_CREATED';
       conversation.pendingOrder = { createdOrder: order };
       await conversation.save();
-      return res.json({ success: true, data: { message: formatSuccessfulOrderResponse(order), order, sessionId: conversation.sessionId } });
+      return res.json({ success: true, data: { message: formatSuccessfulOrderResponse(order), order, viewOrderPath: '/shop/deals', sessionId: conversation.sessionId } });
     }
 
     if (isPendingConfirmationState(conversation.orderState) && conversation.pendingOrder) {
@@ -196,7 +196,7 @@ const confirmOrder = async (req, res) => {
     conversation.orderState = 'ORDER_CREATED';
     conversation.pendingOrder = { createdOrder: order };
     await conversation.save();
-    return res.json({ success: true, data: { order, message: formatSuccessfulOrderResponse(order), sessionId: conversation.sessionId } });
+    return res.json({ success: true, data: { order, message: formatSuccessfulOrderResponse(order), viewOrderPath: '/shop/deals', sessionId: conversation.sessionId } });
   } catch (error) {
     console.error('Confirm order error:', error.message);
     const safe = sanitizeErrorPayload(error, 'The order could not be placed right now. Please try again.');
