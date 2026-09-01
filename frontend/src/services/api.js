@@ -84,6 +84,16 @@ export async function cancelAgentOrder(sessionId) {
   return payload.data ?? {}
 }
 
+export async function createRazorpayOrder(merchantId) {
+  const response = await api.post('/api/payments/create-order', { merchantId })
+  return response.data
+}
+
+export async function verifyRazorpayPayment(payload) {
+  const response = await api.post('/api/payment/verify', payload)
+  return response.data
+}
+
 export async function getOrders() {
   const response = await api.get('/api/orders')
   return response.data.data.orders

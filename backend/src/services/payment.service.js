@@ -63,10 +63,12 @@ const createCheckoutOrderForUser = async ({ userId, merchantId, frontendAmount }
 
   const receipt = `checkout_${userId}_${merchantId}_${Date.now()}`;
   const amountInPaise = Math.round(safeAmount * 100);
+  const orderKey = `checkout:${userId}:${merchantId}:${Date.now()}`;
 
   const orderPayload = await Order.create({
     userId,
     merchantId,
+    idempotencyKey: orderKey,
     items: cart.items.map((item) => ({
       productId: item.productId,
       productName: item.productName || 'Product',
@@ -119,6 +121,7 @@ const createCheckoutOrderForUser = async ({ userId, merchantId, frontendAmount }
   orderPayload.razorpayOrderId = razorpayResponse.order.id;
   orderPayload.paymentStatus = 'PENDING';
   orderPayload.status = 'PENDING_PAYMENT';
+  orderPayload.paymentId = paymentRecord._id;
   if (typeof orderPayload.save === 'function') {
     await orderPayload.save();
   }

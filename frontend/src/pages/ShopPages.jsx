@@ -30,18 +30,19 @@ export function Assistant({ onAdd, onNotify }) {
     } finally { setBusy(false) }
   }
     const placeOrder = async () => {
-      setBusy(true); 
-      try { 
-        const result = await confirmAgentOrder(sessionId); 
-        setOrderPreview(null); 
+      setBusy(true);
+      try {
+        setMessages((items) => [...items, { role: 'agent', text: 'Proceeding to secure payment.' }]);
+        const result = await confirmAgentOrder(sessionId);
+        setOrderPreview(null);
         const order = result.order
-        if (!result.duplicate && order) onNotify?.(`🎉 Order placed successfully! ${order.productName} · ₹${Number(order.total).toLocaleString('en-IN')} paid · Payment: Successful · Expected delivery: ${new Date(order.estimatedDeliveryDate).toLocaleDateString('en-US', { dateStyle: 'long' })}`)
-        setMessages((items) => [...items, { role: 'agent', text: result.message || `I confirm the order and I have paid for it.\nOrder ID: ${order?.id || 'created'}` }]); 
-      } catch (error) { 
-        setMessages((items) => [...items, { role: 'agent', text: error.response?.data?.error?.message || 'I could not place that order.' }]); 
-      } finally { 
-        setBusy(false); 
-      } 
+        if (!result.duplicate && order) onNotify?.(`🎉 Order placed successfully! ${order.productName} · ₹${Number(order.total).toLocaleString('en-IN')} · Expected delivery: ${new Date(order.estimatedDeliveryDate).toLocaleDateString('en-US', { dateStyle: 'long' })}`)
+        setMessages((items) => [...items, { role: 'agent', text: result.message || `Payment successful. Your order has been confirmed.\nOrder ID: ${order?.id || 'created'}` }]);
+      } catch (error) {
+        setMessages((items) => [...items, { role: 'agent', text: error.response?.data?.error?.message || 'I could not place that order.' }]);
+      } finally {
+        setBusy(false);
+      }
     }
     const cancelOrder = async () => { await cancelAgentOrder(sessionId); setOrderPreview(null); setMessages((items) => [...items, { role: 'agent', text: 'The order preview has been cancelled.' }]) }
     return <section className="agent-page"><div className="agent-header"><button className="back-link agent-back" onClick={() => navigate(-1)}><ArrowRight size={16} /> Back to Store</button><div><p className="eyebrow"><Bot size={14} /> AI shopping assistant</p><h1>Find your next favourite.</h1></div><span className="agent-status"><i /> Online / Ready</span></div><div className="agent-layout"><div className="agent-intro"><span className="assistant-avatar"><Bot size={28} /></span><p className="eyebrow">Personal shopping intelligence</p><h2>Ask. Discover.<br /><em>Buy better.</em></h2><p className="muted">Search the live catalogue, compare products, check stock, or manage your cart.</p>{contextProduct && <div className="agent-context"><small>Currently viewing</small><strong>{contextProduct.name}</strong><span>{money(contextProduct.price)}</span></div>}</div><div className="chat-window agent-chat"><div className="chat-messages">{messages.map((message, index) => <div className={`message ${message.role}`} key={`${index}-${message.text}`}><span>{message.role === 'agent' ? <Bot size={15} /> : 'You'}</span><p>{message.text}</p>{message.products?.length > 0 && <div className="chat-products">{message.products.map((product) => <article className="chat-product" key={product.id}><img src={imageFor(product)} alt={product.name} /><div><Link to={`/shop/products/${product.id}`}><strong>{product.name}</strong></Link><p>{money(product.price)}</p><button className="add-button" onClick={() => onAdd({ ...product, _id: product.id })}>Add to cart</button></div></article>)}</div>}</div>)}{orderPreview && <div className="order-preview"><strong>Order Summary</strong><span>{orderPreview.product.name} × {orderPreview.quantity}</span><span>Delivery: {orderPreview.profile.fullName}</span><span>{orderPreview.profile.address}, {orderPreview.profile.city}</span><b>Total: {money(orderPreview.total)}</b><button className="button primary" onClick={placeOrder} disabled={busy}>Place Order</button><button className="button outline" onClick={cancelOrder} disabled={busy}>Cancel</button></div>}{busy && <div className="message agent typing"><span><Bot size={15} /></span><p>Thinking<span className="typing-dots">...</span></p></div>}</div><div className="suggestions">{['Find a laptop under ₹70,000', 'Show me the best headphones', 'What can you help me with?'].map((suggestion) => <button key={suggestion} onClick={() => setInput(suggestion)}>{suggestion}</button>)}</div><form className="chat-form" onSubmit={send}><input value={input} onChange={(event) => setInput(event.target.value)} placeholder="Ask anything about products..." disabled={busy} /><button className="button primary" aria-label="Send" disabled={busy}><ArrowRight size={18} /></button></form></div></div></section>
@@ -49,7 +50,7 @@ export function Assistant({ onAdd, onNotify }) {
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { ArrowRight, Bot, Check, ChevronDown, Heart, Minus, Plus, Search, ShoppingBag, Sparkles, Star, Trash2, Truck, X } from 'lucide-react'
-import { addToCart, cancelAgentOrder, confirmAgentOrder, getCart, getOrders, getProduct, getProducts, removeFromCart, sendAgentMessage, updateCartItem } from '../services/api'
+import { addToCart, cancelAgentOrder, confirmAgentOrder, createRazorpayOrder, getCart, getOrders, getProduct, getProducts, getUserProfile, removeFromCart, sendAgentMessage, updateCartItem, verifyRazorpayPayment } from '../services/api'
 import '../Agent.css'
 
 const categories = ['Electronics', 'Fashion', 'Beauty', 'Home & Kitchen', 'Grocery', 'Sports', 'Books', 'Accessories']
@@ -119,7 +120,208 @@ export function CartPage({ cart, setCart, onAdd }) { const navigate = useNavigat
 
 export function LegacyAssistant({ onAdd }) { const [messages, setMessages] = useState([{ role: 'agent', text: 'Hi! I can help you find products, compare options, and build a better cart. What are you shopping for?' }]); const [input, setInput] = useState(''); const [busy, setBusy] = useState(false); const [sessionId, setSessionId] = useState(''); const send = async (event) => { event.preventDefault(); if (!input.trim() || busy) return; const text = input.trim(); setInput(''); setMessages((items) => [...items, { role: 'user', text }]); setBusy(true); try { const result = await sendAgentMessage(text, sessionId || undefined); setSessionId(result.sessionId); setMessages((items) => [...items, { role: 'agent', text: result.message, products: result.products || [] }]); } catch (error) { setMessages((items) => [...items, { role: 'agent', text: error.response?.data?.error?.message || 'I could not reach the shopping assistant. Please try again.' }]); } finally { setBusy(false); } }; return <section className="section assistant"><div className="assistant-intro"><span className="assistant-avatar"><Bot size={28} /></span><p className="eyebrow">Your shopping intelligence</p><h1>Ask, discover,<br /><em>buy better.</em></h1><p className="muted">Try “laptop for programming under ₹70,000” or “what goes well with my cart?”</p></div><div className="chat-window"><div className="chat-messages">{messages.map((message, index) => <div className={`message ${message.role}`} key={index}><span>{message.role === 'agent' ? <Bot size={15} /> : 'You'}</span><p>{message.text}</p>{message.products?.length > 0 && <div className="chat-products">{message.products.map((product) => <article className="chat-product" key={product.id}><img src={imageFor(product)} alt={product.name} /><div><Link to={`/shop/products/${product.id}`}><strong>{product.name}</strong></Link><p>{money(product.price)}</p><button className="add-button" onClick={() => onAdd({ ...product, _id: product.id })}>Add to cart</button></div></article>)}</div>}</div>)}</div>{busy && <div className="message agent"><span><Bot size={15} /></span><p>Searching the live catalogue...</p></div>}<div className="suggestions">{['Laptop under ₹70,000', 'Best headphones', 'Gift for my brother'].map((suggestion) => <button key={suggestion} onClick={() => setInput(suggestion)}>{suggestion}</button>)}</div><form className="chat-form" onSubmit={send}><input value={input} onChange={(event) => setInput(event.target.value)} placeholder="Ask anything about the catalogue..." disabled={busy} /><button className="button primary" aria-label="Send" disabled={busy}><ArrowRight size={18} /></button></form></div></section> }
 
-export function Checkout({ cart }) { const [step, setStep] = useState(1); const [done, setDone] = useState(false); if (done) return <section className="section confirmation"><div className="success-mark"><Check size={30} /></div><p className="eyebrow">Order confirmed</p><h1>That’s a great choice.</h1><p>Your order <strong>#ACM{Math.floor(100000 + Math.random() * 900000)}</strong> is confirmed. We’ll keep you posted as it moves.</p><Link className="button primary" to="/shop/orders">Track order <ArrowRight size={16} /></Link></section>; return <section className="section checkout"><div className="checkout-steps">{['Address', 'Delivery', 'Payment'].map((label, index) => <button key={label} className={step === index + 1 ? 'active' : step > index + 1 ? 'complete' : ''} onClick={() => setStep(index + 1)}><span>{step > index + 1 ? <Check size={14} /> : index + 1}</span>{label}</button>)}</div><div className="checkout-panel"><p className="eyebrow">Step {step} of 3</p><h1>{step === 1 ? 'Where should we deliver?' : step === 2 ? 'Choose your delivery' : 'How would you like to pay?'}</h1>{step === 1 && <div className="form-grid"><input placeholder="Full name" /><input placeholder="Phone number" /><input className="wide" placeholder="Address" /><input placeholder="City" /><input placeholder="State" /><input placeholder="Pincode" /></div>}{step === 2 && <div className="delivery-options"><label><input type="radio" defaultChecked name="delivery" /> <span><strong>Standard delivery</strong><small>Arrives in 3–5 business days · Free</small></span></label><label><input type="radio" name="delivery" /> <span><strong>Express delivery</strong><small>Arrives tomorrow · ₹149</small></span></label></div>}{step === 3 && <div className="delivery-options"><label><input type="radio" defaultChecked name="payment" /> <span><strong>Razorpay</strong><small>UPI, cards and net banking</small></span></label><label><input type="radio" name="payment" /> <span><strong>Cash on delivery</strong><small>Pay when your order arrives</small></span></label></div>}<button className="button primary" onClick={() => step < 3 ? setStep(step + 1) : setDone(true)}>{step < 3 ? 'Continue' : `Pay ${money(cart?.total)}`} <ArrowRight size={16} /></button></div></section> }
+const loadRazorpayScript = () => new Promise((resolve, reject) => {
+  if (window.Razorpay) return resolve(true)
+
+  const script = document.createElement('script')
+  script.src = 'https://checkout.razorpay.com/v1/checkout.js'
+  script.async = true
+  script.onload = () => resolve(true)
+  script.onerror = () => reject(new Error('Unable to load Razorpay checkout'))
+  document.body.appendChild(script)
+})
+
+export function Checkout({ cart }) {
+  const navigate = useNavigate()
+  const [step, setStep] = useState(1)
+  const [done, setDone] = useState(false)
+  const [processing, setProcessing] = useState(false)
+  const [error, setError] = useState('')
+  const [profile, setProfile] = useState({ fullName: '', email: '', phone: '' })
+
+  useEffect(() => {
+    let active = true
+    getUserProfile().then((data) => {
+      if (!active) return
+      setProfile({
+        fullName: data?.fullName || data?.name || '',
+        email: data?.email || '',
+        phone: data?.phone || '',
+      })
+    }).catch(() => {})
+    return () => { active = false }
+  }, [])
+
+  const handleCheckout = async () => {
+    if (!cart || !cart.items?.length) {
+      setError('Your cart is empty. Add an item before checkout.')
+      return
+    }
+
+    setError('')
+    setProcessing(true)
+
+    try {
+      await loadRazorpayScript()
+      const response = await createRazorpayOrder(cart.merchantId)
+      const payload = response?.data
+      if (!payload || !payload.keyId || !payload.razorpayOrderId) {
+        throw new Error('The payment session could not be created. Please try again.')
+      }
+
+      const options = {
+        key: payload.keyId,
+        amount: payload.amount,
+        currency: payload.currency,
+        name: 'AI Commerce',
+        description: 'Secure order payment',
+        order_id: payload.razorpayOrderId,
+        handler: async (razorpayResponse) => {
+          try {
+            const verification = await verifyRazorpayPayment({
+              internalOrderId: payload.internalOrderId,
+              razorpay_order_id: razorpayResponse.razorpay_order_id,
+              razorpay_payment_id: razorpayResponse.razorpay_payment_id,
+              razorpay_signature: razorpayResponse.razorpay_signature,
+            })
+
+            if (verification?.success) {
+              setDone(true)
+              return
+            }
+
+            setError(verification?.error?.message || 'Payment verification failed. Please try again.')
+          } catch (err) {
+            setError(err.response?.data?.error?.message || 'Payment verification failed. Please try again.')
+          } finally {
+            setProcessing(false)
+          }
+        },
+        prefill: {
+          name: profile.fullName,
+          email: profile.email,
+          contact: profile.phone,
+        },
+        theme: { color: '#0f766e' },
+        modal: {
+          ondismiss: () => {
+            setError('Payment was cancelled. Your order remains unpaid.')
+            setProcessing(false)
+          },
+        },
+      }
+
+      const razorpayInstance = new window.Razorpay(options)
+      razorpayInstance.on('payment.failed', (failure) => {
+        setError(failure?.error?.description || 'Payment failed. Please try again.')
+        setProcessing(false)
+      })
+      razorpayInstance.open()
+    } catch (err) {
+      setError(err.response?.data?.error?.message || err.message || 'Unable to start the secure payment flow.')
+      setProcessing(false)
+    }
+  }
+
+  if (done) {
+    return (
+      <section className="section confirmation">
+        <div className="success-mark"><Check size={30} /></div>
+        <p className="eyebrow">Order confirmed</p>
+        <h1>That’s a great choice.</h1>
+        <p>Payment successful. Your order has been confirmed.</p>
+        <Link className="button primary" to="/shop/orders">Track order <ArrowRight size={16} /></Link>
+      </section>
+    )
+  }
+
+  return (
+    <section className="section checkout">
+      <div className="checkout-steps">
+        {['Address', 'Delivery', 'Payment'].map((label, index) => (
+          <button
+            key={label}
+            className={step === index + 1 ? 'active' : step > index + 1 ? 'complete' : ''}
+            onClick={() => setStep(index + 1)}
+          >
+            <span>{step > index + 1 ? <Check size={14} /> : index + 1}</span>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      <div className="checkout-panel">
+        <p className="eyebrow">Step {step} of 3</p>
+        <h1>
+          {step === 1 ? 'Where should we deliver?' : step === 2 ? 'Choose your delivery' : 'How would you like to pay?'}
+        </h1>
+
+        {step === 1 && (
+          <div className="form-grid">
+            <input value={profile.fullName} readOnly placeholder="Full name" />
+            <input value={profile.phone} readOnly placeholder="Phone number" />
+            <input className="wide" value={profile.email} readOnly placeholder="Email address" />
+            <input className="wide" value="Delivery details from your saved profile" readOnly />
+          </div>
+        )}
+
+        {step === 2 && (
+          <div className="delivery-options">
+            <label>
+              <input type="radio" defaultChecked name="delivery" />
+              <span>
+                <strong>Standard delivery</strong>
+                <small>Arrives in 3–5 business days · Free</small>
+              </span>
+            </label>
+            <label>
+              <input type="radio" name="delivery" />
+              <span>
+                <strong>Express delivery</strong>
+                <small>Arrives tomorrow · ₹149</small>
+              </span>
+            </label>
+          </div>
+        )}
+
+        {step === 3 && (
+          <div className="delivery-options">
+            <label>
+              <input type="radio" defaultChecked name="payment" />
+              <span>
+                <strong>Razorpay</strong>
+                <small>UPI, cards and net banking</small>
+              </span>
+            </label>
+            <label>
+              <input type="radio" name="payment" />
+              <span>
+                <strong>Cash on delivery</strong>
+                <small>Pay when your order arrives</small>
+              </span>
+            </label>
+          </div>
+        )}
+
+        {error && <div className="notice error-state" style={{ marginTop: '18px' }}>{error}</div>}
+
+        <div className="checkout-summary">
+          <div className="line"><span>Subtotal</span><strong>{money(cart?.subtotal || cart?.total || 0)}</strong></div>
+          <div className="line"><span>Shipping</span><strong>Free</strong></div>
+          <div className="line total"><span>Total</span><strong>{money(cart?.total || 0)}</strong></div>
+
+          {step < 3 ? (
+            <button className="button primary" onClick={() => setStep(step + 1)}>Continue</button>
+          ) : (
+            <button className="button primary" onClick={handleCheckout} disabled={processing}>
+              {processing ? 'Processing...' : 'Proceed to secure payment'}
+            </button>
+          )}
+        </div>
+      </div>
+    </section>
+  )
+}
 
 const orderStages = ['Order Placed', 'Payment Confirmed', 'Preparing to Ship', 'Shipped', 'Out for Delivery', 'Delivered']
 const stageForOrder = (status) => status === 'DELIVERED' ? 5 : status === 'SHIPPED' ? 3 : status === 'OUT_FOR_DELIVERY' ? 4 : status === 'PAID' ? 1 : 2
