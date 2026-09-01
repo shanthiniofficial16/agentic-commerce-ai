@@ -164,7 +164,7 @@ const chat = async (req, res) => {
 
     return res.json({
       success: true,
-      data: { message: result.text, products: result.products, orderPreview: isPendingConfirmationState(result.pendingOrder?.state) ? { ...result.pendingOrder, state: 'PENDING_CONFIRMATION' } : null, profileRequired: result.pendingOrder?.state === 'PROFILE_REQUIRED' ? result.pendingOrder.requiredFields : null, sessionId: conversation.sessionId },
+      data: { message: result.text, products: result.products, orderPreview: isPendingConfirmationState(result.pendingOrder?.state) ? { ...result.pendingOrder, state: 'PENDING_CONFIRMATION' } : null, profileRequired: result.pendingOrder?.state === 'PROFILE_REQUIRED' ? result.pendingOrder.requiredFields : null, viewOrderPath: result.viewOrderPath || null, sessionId: conversation.sessionId },
     });
   } catch (error) {
     console.error('[Agent] chat request failed', {

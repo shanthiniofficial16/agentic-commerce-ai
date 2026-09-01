@@ -169,7 +169,7 @@ const executeTool = async (name, rawArgs, context) => {
   }
   if (name === 'getMyOrders') {
     const orders = await Order.find({ userId, merchantId }).sort({ createdAt: -1 }).limit(10).lean();
-    return { orders: orders.map((order) => ({ id: order._id.toString(), items: order.items, total: order.total, currency: order.currency, status: order.status, createdAt: order.createdAt })) };
+    return { orders: orders.map((order) => ({ id: order._id.toString(), items: order.items, total: order.total, currency: order.currency, paymentStatus: order.paymentStatus, status: order.status, estimatedDeliveryDate: order.estimatedDeliveryDate, createdAt: order.createdAt })) };
   }
   if (name === 'getOrderDetails' || name === 'trackOrder') {
     const order = await Order.findOne({ _id: validId(args.orderId, 'orderId'), userId, merchantId }).lean();

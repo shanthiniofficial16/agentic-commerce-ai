@@ -97,6 +97,20 @@ const isPurchaseIntent = (message) => {
 };
 
 const isOrderRequest = (message) => isPurchaseIntent(message) || /\b(buy|proceed|place|confirm|order|purchase)\b/.test(message.toLowerCase());
+const isOrderHistoryRequest = (message) => /\b(my orders|recent orders|what did i order|has my order been placed|where is my order|order status|when will i receive|when will .* arrive|expected delivery|delivery date)\b/i.test(message);
+const formatOrderHistory = (orders, message) => {
+  if (!orders.length) return { text: 'I could not find any orders in your account.', products: [], pendingOrder: null };
+  const normalizedMessage = message.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  const matchingOrders = orders.filter((order) => order.items?.some((item) => normalizedMessage.includes(String(item.productName || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim())));
+  const requested = /\b(when|where|status|delivery|arrive|receive|placed)\b/i.test(message) && matchingOrders.length ? matchingOrders : orders;
+  const selected = requested.length ? requested.slice(0, 1) : orders;
+  const lines = selected.slice(0, 5).map((order) => {
+    const item = order.items?.[0];
+    const delivery = order.estimatedDeliveryDate ? new Date(order.estimatedDeliveryDate).toLocaleDateString('en-US', { dateStyle: 'long' }) : 'not available';
+    return `${item?.productName || 'Order'} — ₹${Number(order.total || 0).toLocaleString('en-IN')}\nStatus: ${order.status}\nExpected delivery: ${delivery}`;
+  });
+  return { text: selected.length === 1 && /\b(when|where|status|delivery|arrive|receive)\b/i.test(message) ? `Your ${lines[0].split(' — ')[0]} is currently marked as ${selected[0].status}.\n\nYour expected delivery date is ${selected[0].estimatedDeliveryDate ? new Date(selected[0].estimatedDeliveryDate).toLocaleDateString('en-US', { dateStyle: 'long' }) : 'not available'}.` : `Here are your recent orders:\n\n${lines.join('\n\n')}`, products: [], pendingOrder: null, viewOrderPath: '/shop/deals' };
+};
 
 const normalizeCurrencyNumber = (value, suffix) => {
   if (value === undefined || value === null || value === '') return null;
@@ -501,6 +515,11 @@ const runAgent = async ({ message, history = [], context }) => {
     if (complementary) {
       return complementary;
     }
+  }
+
+  if (isOrderHistoryRequest(message)) {
+    const historyResult = await executeTool('getMyOrders', {}, context);
+    return formatOrderHistory(historyResult.orders || [], message);
   }
 
   if (isPurchaseIntent(message)) {

@@ -84,7 +84,7 @@ const saveProfile = async (userId, input) => {
 };
 
 const getOrdersForUser = async (userId, merchantId) => {
-  const orders = await Order.find({ userId, ...(merchantId ? { merchantId } : {}) }).sort({ createdAt: -1 }).lean();
+  const orders = await Order.find({ userId, ...(merchantId ? { merchantId } : {}) }).populate('items.productId', 'images').sort({ createdAt: -1 }).lean();
   return orders.map((order) => ({
     id: order._id.toString(),
     product: order.items?.[0]?.productName || 'Product',
@@ -97,6 +97,7 @@ const getOrdersForUser = async (userId, merchantId) => {
     createdAt: order.createdAt,
     delivery: order.delivery,
     items: order.items || [],
+    productImage: order.items?.[0]?.productId?.images?.[0] || null,
   }));
 };
 
