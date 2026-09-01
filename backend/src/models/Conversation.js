@@ -48,6 +48,7 @@ const conversationSchema = new mongoose.Schema(
     },
     pendingOrder: mongoose.Schema.Types.Mixed,
     pendingRecommendation: mongoose.Schema.Types.Mixed,
+    pendingUpsell: mongoose.Schema.Types.Mixed,
   },
   { timestamps: true }
 );

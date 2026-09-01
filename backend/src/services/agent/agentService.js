@@ -203,6 +203,52 @@ const stripComplementaryClauses = (message) => {
   return cleaned.replace(/\s+/g, ' ').trim();
 };
 
+const findUpsellAlternative = async ({ product, context }) => {
+  if (!product) return null;
+  try {
+    const upsell = await Product.findOne({
+      merchantId: context.merchantId,
+      active: true,
+      category: product.category,
+      subcategory: product.subcategory,
+      price: { $gt: product.price, $lte: product.price * 1.5 },
+      stock: { $gt: 0 },
+      _id: { $ne: product._id },
+    }).sort({ price: 1 }).lean();
+    return upsell || null;
+  } catch (error) {
+    console.error('[Upsell] Error finding alternative:', error.message);
+    return null;
+  }
+};
+
+const findAndRecommendUpsell = async ({ product, context }) => {
+  if (!product) return null;
+  const upsell = await findUpsellAlternative({ product, context });
+  if (!upsell) return null;
+  const incrementalRevenue = upsell.price - product.price;
+  return {
+    text: `I found a higher-spec option that may be a better fit:\n\n${upsell.name}\n₹${Number(upsell.price).toLocaleString('en-IN')}\n\nYour current selection:\n${product.name}\n₹${Number(product.price).toLocaleString('en-IN')}\n\nUpgrade difference:\n₹${Number(incrementalRevenue).toLocaleString('en-IN')}\n\nWould you like to upgrade to the ${upsell.name}?`,
+    products: [{
+      id: upsell._id.toString(),
+      name: upsell.name,
+      price: upsell.price,
+      stock: upsell.stock,
+      category: upsell.category,
+      brand: upsell.brand,
+      subcategory: upsell.subcategory,
+      description: upsell.shortDescription || upsell.description,
+    }],
+    pendingUpsell: {
+      originalProductId: product._id.toString(),
+      originalPrice: product.price,
+      upsellProductId: upsell._id.toString(),
+      upsellPrice: upsell.price,
+      incrementalRevenue,
+    },
+  };
+};
+
 const extractRequestedAccessoryTerms = (message) => {
   const text = message.toLowerCase();
   const terms = Array.from(new Set((text.match(/\b(mouse|bag|headphone|headphones|earphone|earphones|ring|rings|bracelet|bracelets|earring|earrings|charger|case|keyboard|hub|speaker|travel|accessory|accessories)\b/g) || []).map((term) => term.replace(/s$/, ''))));
@@ -293,7 +339,7 @@ const resolveComplementaryProducts = async ({ message, history = [], context }) 
           description: upsell.shortDescription || upsell.description,
         }],
         pendingOrder: null,
-        pendingRecommendation: { productId: upsell._id.toString(), productName: upsell.name, type: 'UPSELL' },
+        pendingRecommendation: { productId: upsell._id.toString(), productName: upsell.name },
       };
     }
     return {
@@ -395,6 +441,18 @@ const resolveSpecificProductRequest = async ({ message, history = [], context })
 
   if (asksToAdd) {
     const cartResult = await executeTool('addToCart', { productId: current.id, quantity: 1 }, context);
+    const upsellResult = await findAndRecommendUpsell({ product: current, context });
+    
+    if (upsellResult) {
+      return {
+        text: `${current.name} was added to your cart. Current total: ₹${Number(cartResult.total || 0).toLocaleString('en-IN')}.\n\n${upsellResult.text}`,
+        products: [current, ...upsellResult.products],
+        pendingOrder: null,
+        pendingUpsell: upsellResult.pendingUpsell,
+        selectedProductId: getProductId(current),
+      };
+    }
+    
     return {
       text: `${current.name} was added to your cart. Current total: ₹${Number(cartResult.total || 0).toLocaleString('en-IN')}.`,
       products: [current],
@@ -851,4 +909,6 @@ module.exports = {
   formatBudgetText,
   isPurchaseIntent,
   isOrderRequest,
+  findUpsellAlternative,
+  findAndRecommendUpsell,
 };
