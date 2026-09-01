@@ -4,6 +4,7 @@ const Merchant = require('../models/Merchant');
 const Product = require('../models/Product');
 const { runAgent, isPurchaseIntent } = require('../services/agent/agentService');
 const { createOrder } = require('../services/order.service');
+const { executeTool } = require('../services/agent/tools');
 const { sanitizeErrorPayload } = require('../utils/errorMessageMap');
 
 const normalizeDecisionMessage = (message) => typeof message === 'string' ? message.trim() : '';
@@ -98,6 +99,17 @@ const chat = async (req, res) => {
     const parsedDecision = parseConfirmationResponse(message);
     // Purchase phrases such as "Buy it" start checkout unless a preview already exists.
     const confirmationDecision = !hasPendingOrder && isPurchaseIntent(message) ? 'pending' : parsedDecision;
+    if (conversation.pendingRecommendation && confirmationDecision !== 'pending') {
+      const recommendation = conversation.pendingRecommendation;
+      conversation.pendingRecommendation = undefined;
+      if (confirmationDecision === 'cancel') {
+        await conversation.save();
+        return res.json({ success: true, data: { message: 'No problem. I kept your cart unchanged.', sessionId: conversation.sessionId, recommendationDeclined: true } });
+      }
+      const cartResult = await executeTool('addToCart', { productId: recommendation.productId, quantity: 1 }, { userId: req.userId, merchantId: conversation.merchantId });
+      await conversation.save();
+      return res.json({ success: true, data: { message: `${cartResult.product.name} was added to your cart. Your cart total is now ₹${Number(cartResult.total).toLocaleString('en-IN')}. Say “Buy it” when you are ready for checkout.`, products: [cartResult.product], sessionId: conversation.sessionId, recommendationAccepted: true } });
+    }
     if (confirmationDecision !== 'pending') {
       if (!isPendingConfirmationState(conversation.orderState) || !conversation.pendingOrder) {
         return res.status(409).json({ success: false, error: { code: 'ORDER_NOT_READY', message: 'There is no order preview awaiting confirmation. Say “Buy this” first to prepare checkout, then reply “Yes”.' } });
@@ -145,6 +157,9 @@ const chat = async (req, res) => {
       const nextState = isPendingConfirmationState(result.pendingOrder.state) ? 'PENDING_CONFIRMATION' : result.pendingOrder.state;
       conversation.orderState = nextState;
       conversation.pendingOrder = { ...result.pendingOrder, state: nextState };
+    }
+    if (result.pendingRecommendation) {
+      conversation.pendingRecommendation = result.pendingRecommendation;
     }
     if (result.selectedProductId) {
       conversation.selectedProductId = result.selectedProductId;

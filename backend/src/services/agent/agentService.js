@@ -276,6 +276,26 @@ const resolveComplementaryProducts = async ({ message, history = [], context }) 
     .slice(0, 5);
 
   if (!scored.length) {
+    const upsell = await Product.findOne({
+      merchantId: context.merchantId,
+      active: true,
+      category: main.category,
+      price: { $gt: main.price, $lte: main.price * 1.5 },
+      stock: { $gt: 0 },
+      _id: { $ne: main._id },
+    }).sort({ price: 1 }).lean();
+    if (upsell) {
+      return {
+        text: `I also found a higher-value ${main.category.toLowerCase()} option: ${upsell.name} — ₹${Number(upsell.price).toLocaleString('en-IN')}\nWould you like to consider this upgrade?`,
+        products: [{
+          id: upsell._id.toString(), name: upsell.name, price: upsell.price, stock: upsell.stock,
+          category: upsell.category, brand: upsell.brand, subcategory: upsell.subcategory,
+          description: upsell.shortDescription || upsell.description,
+        }],
+        pendingOrder: null,
+        pendingRecommendation: { productId: upsell._id.toString(), productName: upsell.name, type: 'UPSELL' },
+      };
+    }
     return {
       text: `I couldn’t find any complementary products in the current catalog for ${main.name}.`,
       products: [],
@@ -283,11 +303,11 @@ const resolveComplementaryProducts = async ({ message, history = [], context }) 
     };
   }
 
-  const selected = scored.map((entry) => entry.product).filter((product) => product && product.name);
+  const selected = scored.map((entry) => entry.product).filter((product) => product && product.name).slice(0, 3);
   const lines = selected.map((product) => `• ${product.name} — ₹${Number(product.price).toLocaleString('en-IN')} — ${Number(product.stock) > 0 ? `Available (${product.stock} in stock)` : 'Currently unavailable'}`);
 
   return {
-    text: `Here are some complementary products from our catalog for ${main.name}:\n${lines.join('\n')}`,
+    text: `Since you're considering ${main.name}, I found these relevant accessories:\n${lines.join('\n')}\n\nWould you like to add one of these to your cart?`,
     products: selected.map((product) => ({
       id: product._id.toString(),
       name: product.name,
@@ -299,6 +319,7 @@ const resolveComplementaryProducts = async ({ message, history = [], context }) 
       description: product.shortDescription || product.description,
     })),
     pendingOrder: null,
+    pendingRecommendation: { productId: selected[0]._id.toString(), productName: selected[0].name },
   };
 };
 
@@ -488,6 +509,7 @@ const resolveCombinedShoppingIntent = async ({ message, history = [], context })
     text,
     products: [...products.slice(0, 5), ...(complementary?.products || [])],
     pendingOrder: complementary?.pendingOrder || null,
+    pendingRecommendation: complementary?.pendingRecommendation || null,
     selectedProductId: getProductId(mainProduct),
   };
 };
