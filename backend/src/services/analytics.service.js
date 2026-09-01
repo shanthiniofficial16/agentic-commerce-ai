@@ -7,7 +7,7 @@ const getMerchantAnalytics = async (merchantId, dateFilter = null) => {
     if (dateFilter.startDate) dateQuery.$gte = new Date(dateFilter.startDate);
     if (dateFilter.endDate) { const endDate = new Date(dateFilter.endDate); endDate.setDate(endDate.getDate() + 1); dateQuery.$lt = endDate; }
   }
-  const query = { merchantId, status: { $in: ['COMPLETED', 'PAID'] }, paymentStatus: { $in: ['DEMO_PAID', 'PAID'] } };
+  const query = { merchantId, status: { $in: ['COMPLETED', 'PAID'] }, paymentStatus: 'PAID' };
   if (dateQuery) query.createdAt = dateQuery;
   const successfulOrders = await Order.find(query).lean();
   const items = successfulOrders.flatMap((order) => order.items || []);

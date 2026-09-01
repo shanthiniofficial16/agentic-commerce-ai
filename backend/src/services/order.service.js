@@ -249,8 +249,7 @@ const createOrder = async ({ userId, merchantId, pendingOrder, idempotencyKey, p
   const orderItems = products.map((product) => ({ productId: product._id, productName: product.name, quantity: product.quantity, price: product.price, source: product.source || 'customer', aiIncrementalAmount: product.source === 'ai_cross_sell' ? product.price * product.quantity : product.aiIncrementalAmount || 0 }));
   const orderTotal = orderItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
   try {
-    const isDemoPayment = paymentStatus === 'DEMO_PAID';
-    const status = isDemoPayment ? 'COMPLETED' : paymentStatus === 'PAID' ? 'PAID' : 'PENDING_PAYMENT';
+    const status = paymentStatus === 'PAID' ? 'PAID' : 'PENDING_PAYMENT';
     const order = await Order.create({
       userId,
       merchantId,

@@ -140,18 +140,13 @@ const chat = async (req, res) => {
         return res.json({ success: true, data: { message: 'The order was cancelled.', sessionId: conversation.sessionId, cancelled: true } });
       }
 
-      const order = await createOrder({
-        userId: req.userId,
-        merchantId: conversation.merchantId,
-        pendingOrder: conversation.pendingOrder,
-        idempotencyKey: `agent:${req.userId}:${conversation.sessionId}`,
-        paymentStatus: 'DEMO_PAID',
+      return res.status(409).json({
+        success: false,
+        error: {
+          code: 'PAYMENT_VERIFICATION_REQUIRED',
+          message: 'Proceeding to secure payment. Complete the Razorpay checkout flow to confirm and pay for this order.',
+        },
       });
-
-      conversation.orderState = 'ORDER_CREATED';
-      conversation.pendingOrder = { createdOrder: order };
-      await conversation.save();
-      return res.json({ success: true, data: { message: formatSuccessfulOrderResponse(order), order, viewOrderPath: '/shop/deals', sessionId: conversation.sessionId } });
     }
 
     if (isPendingConfirmationState(conversation.orderState) && conversation.pendingOrder) {
@@ -231,11 +226,13 @@ const confirmOrder = async (req, res) => {
     if (!conversation) return res.status(404).json({ success: false, error: { code: 'SESSION_NOT_FOUND', message: 'Order session not found' } });
     if (conversation.orderState === 'ORDER_CREATED' && conversation.pendingOrder?.createdOrder) return res.json({ success: true, data: { order: conversation.pendingOrder.createdOrder, duplicate: true } });
     if (!isPendingConfirmationState(conversation.orderState) || !conversation.pendingOrder) return res.status(409).json({ success: false, error: { code: 'ORDER_NOT_READY', message: 'No order preview is awaiting approval' } });
-    const order = await createOrder({ userId: req.userId, merchantId: conversation.merchantId, pendingOrder: conversation.pendingOrder, idempotencyKey: `agent:${req.userId}:${conversation.sessionId}`, paymentStatus: 'DEMO_PAID' });
-    conversation.orderState = 'ORDER_CREATED';
-    conversation.pendingOrder = { createdOrder: order };
-    await conversation.save();
-    return res.json({ success: true, data: { order, message: formatSuccessfulOrderResponse(order), viewOrderPath: '/shop/deals', sessionId: conversation.sessionId } });
+    return res.status(409).json({
+      success: false,
+      error: {
+        code: 'PAYMENT_VERIFICATION_REQUIRED',
+        message: 'Proceeding to secure payment. Complete the Razorpay checkout flow to confirm and pay for this order.',
+      },
+    });
   } catch (error) {
     console.error('Confirm order error:', error.message);
     const safe = sanitizeErrorPayload(error, 'The order could not be placed right now. Please try again.');

@@ -59,8 +59,8 @@ const orderSchema = new mongoose.Schema(
     },
     paymentStatus: {
       type: String,
-      enum: ['DEMO_PAID', 'PENDING', 'PAID', 'FAILED'],
-      default: 'DEMO_PAID',
+      enum: ['PENDING', 'PAID', 'FAILED'],
+      default: 'PENDING',
     },
     estimatedDeliveryDate: {
       type: Date,

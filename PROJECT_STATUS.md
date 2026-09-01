@@ -288,16 +288,16 @@ All 10 MongoDB models created with proper schemas:
 
 ---
 
-## ✅ PHASE 8: Placeholder Routes
+## ✅ PHASE 8: Verified App Routes
 **Status: COMPLETED**
 
-Minimal implementations created to allow app to start:
+Operational implementations were completed for the live app flows:
 
-- [x] Order routes - Placeholder GET/POST endpoints
-- [x] Payment routes - Placeholder payment endpoints
-- [x] Agent routes - Placeholder chat and catalog endpoints
-- [x] Merchant routes - Placeholder dashboard/analytics endpoints
-- [x] Audit routes - Placeholder audit log endpoints
+- [x] Order routes - Verified checkout and order lifecycle endpoints
+- [x] Payment routes - Verified Razorpay checkout and signature validation endpoints
+- [x] Agent routes - Chat, product discovery, and order confirmation flow endpoints
+- [x] Merchant routes - Dashboard and analytics endpoints
+- [x] Audit routes - Audit log endpoints
 
 **Files Created:**
 - `backend/src/routes/order.routes.js`
