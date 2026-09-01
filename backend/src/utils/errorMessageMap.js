@@ -15,6 +15,7 @@ const ERROR_MESSAGE_MAP = {
   ORDER_NOT_READY: 'There is no order ready for confirmation right now.',
   ORDER_PREVIEW_EXPIRED: 'That order preview has expired. Please try again.',
   PAYMENT_FAILED: 'Payment could not be completed. Please try again.',
+  RAZORPAY_ORDER_CREATION_FAILED: 'Razorpay could not create the payment order right now. Please try again.',
   PAYMENT_NOT_CONFIGURED: 'Secure payment is not configured. Add valid Razorpay test credentials before continuing.',
   PAYMENT_VERIFICATION_FAILED: 'Payment could not be verified. Your order has not been marked as paid.',
 

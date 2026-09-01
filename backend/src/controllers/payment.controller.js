@@ -1,7 +1,49 @@
 const mongoose = require('mongoose');
 const Conversation = require('../models/Conversation');
 const { verifyAndFinalizePayment } = require('../services/order.service');
+const { createCheckoutOrderForUser } = require('../services/payment.service');
 const { sanitizeErrorPayload } = require('../utils/errorMessageMap');
+
+const createOrder = async (req, res) => {
+  try {
+    const merchantId = req.body.merchantId || req.query.merchantId;
+    const frontendAmount = req.body.amount;
+
+    if (!merchantId) {
+      return res.status(400).json({
+        success: false,
+        error: { code: 'VALIDATION_ERROR', message: 'merchantId is required' },
+      });
+    }
+
+    const result = await createCheckoutOrderForUser({
+      userId: req.userId,
+      merchantId,
+      frontendAmount,
+    });
+
+    return res.json({
+      success: true,
+      data: {
+        keyId: result.keyId,
+        razorpayOrderId: result.razorpayOrderId,
+        amount: result.amount,
+        currency: result.currency,
+        internalOrderId: result.internalOrderId,
+      },
+    });
+  } catch (error) {
+    const safe = sanitizeErrorPayload(error, 'Razorpay order could not be created right now.');
+    const statusCode = error.status || 500;
+    return res.status(statusCode).json({
+      success: false,
+      error: {
+        code: error.code || 'PAYMENT_FAILED',
+        message: safe.message,
+      },
+    });
+  }
+};
 
 const verify = async (req, res) => {
   try {
@@ -32,4 +74,4 @@ const status = async (req, res) => {
   return res.status(501).json({ success: false, error: { code: 'PAYMENT_STATUS_UNAVAILABLE', message: 'Payment status lookup is not available until a provider transaction is created.' } });
 };
 
-module.exports = { verify, status };
+module.exports = { createOrder, verify, status };
