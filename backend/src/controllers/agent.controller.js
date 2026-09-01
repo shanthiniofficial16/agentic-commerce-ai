@@ -30,7 +30,7 @@ const parseConfirmationResponse = (message) => {
 };
 
 const isPendingConfirmationState = (state) => ['PENDING_CONFIRMATION', 'AWAITING_APPROVAL'].includes(state);
-const formatSuccessfulOrderResponse = (order) => `🎉 Order placed successfully!\n\nProduct: ${order.productName}\n\nAmount: ₹${Number(order.total).toLocaleString('en-IN')}\n\nPayment: Successful\n\nExpected Delivery: ${new Date(order.estimatedDeliveryDate).toLocaleDateString('en-US', { dateStyle: 'long' })}\n\nYour order will be delivered to your saved address.\n\nYou can track it from your Orders Dashboard.\n\nOrder ID: #${order.id}`;
+const formatSuccessfulOrderResponse = (order) => `🎉 Order placed successfully!\n\nHi ${order.delivery?.fullName || 'there'},\n\nYour order for ${order.productName} has been placed successfully.\n\nAmount Paid: ₹${Number(order.total).toLocaleString('en-IN')}\n\nPayment: Successful\n\nExpected Delivery: ${new Date(order.estimatedDeliveryDate).toLocaleDateString('en-US', { dateStyle: 'long' })}\n\nYour order has been saved to your account.\n\nYou can track it from your Orders Dashboard.`;
 
 const chat = async (req, res) => {
   try {
