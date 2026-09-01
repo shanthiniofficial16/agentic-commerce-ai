@@ -48,6 +48,14 @@ export async function getUserProfile() {
   return response.data.data
 }
 
+export async function getMerchantAnalytics(startDate = null, endDate = null) {
+  const params = {}
+  if (startDate) params.startDate = startDate.toISOString().split('T')[0]
+  if (endDate) params.endDate = endDate.toISOString().split('T')[0]
+  const response = await api.get('/api/merchant/analytics', { params })
+  return response.data.data.analytics
+}
+
 export async function updateUserProfile(profile) {
   const response = await api.put('/api/auth/profile', profile)
   return response.data.data

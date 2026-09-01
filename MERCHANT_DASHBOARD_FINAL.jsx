@@ -11,6 +11,19 @@ const panels = [
   { title: 'Audit trail', text: 'Inspect agent and system actions for your store.', icon: ClipboardList, to: '/merchant/audit', action: 'Open audit log' },
 ]
 
+/**
+ * MerchantDashboard - Main merchant interface with AI revenue analytics
+ * 
+ * Features:
+ * - Primary KPI cards showing total, original, and AI-generated revenue
+ * - Recommendation metrics including conversion rates
+ * - Cross-sell vs upsell revenue breakdown
+ * - Dynamic loading states
+ * - INR currency formatting
+ * - Responsive grid layout
+ * 
+ * Data Source: GET /api/merchant/analytics (authenticated)
+ */
 export default function MerchantDashboard() {
   const { auth, logout } = useAuth()
   const navigate = useNavigate()
@@ -22,6 +35,7 @@ export default function MerchantDashboard() {
     navigate('/login')
   }
 
+  // Fetch analytics on component mount
   useEffect(() => {
     const loadAnalytics = async () => {
       try {
@@ -36,6 +50,7 @@ export default function MerchantDashboard() {
     loadAnalytics()
   }, [])
 
+  // Format helpers for currency (₹) and percentages
   const formatCurrency = (value) => `₹${Number(value || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`
   const formatPercent = (value) => `${Number(value || 0).toFixed(1)}%`
 
@@ -65,7 +80,7 @@ export default function MerchantDashboard() {
           </Link>
         </div>
 
-        {/* Primary KPI Cards */}
+        {/* Primary KPI Cards: Total, Original, AI Revenue + Uplift */}
         <div className="merchant-metrics">
           {!loading && analytics ? (
             <>
@@ -153,7 +168,7 @@ export default function MerchantDashboard() {
           </div>
         )}
 
-        {/* Dashboard Panels */}
+        {/* Dashboard Navigation Panels */}
         <div className="merchant-panels">
           {panels.map(({ title, text, icon: Icon, to, action }) => (
             <Link to={to} className="merchant-panel" key={title}>
