@@ -19,8 +19,9 @@ const getClient = () => {
 
 const createOrder = async ({ amount, currency, receipt }) => {
   const { client, keyId } = getClient();
+  const normalizedAmount = Math.round(Number(amount));
   const order = await client.orders.create({
-    amount: Math.round(Number(amount) * 100),
+    amount: normalizedAmount,
     currency: currency || 'INR',
     receipt,
   });
