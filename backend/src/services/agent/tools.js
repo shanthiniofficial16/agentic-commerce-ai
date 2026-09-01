@@ -136,7 +136,7 @@ const executeTool = async (name, rawArgs, context) => {
     let cart = await Cart.findOne({ userId, merchantId });
     if (!cart) cart = new Cart({ userId, merchantId, items: [] });
     const item = cart.items.find((entry) => entry.productId.toString() === product._id.toString());
-    if (item) { if (product.stock < item.quantity + quantity) throw new Error(`Only ${product.stock} units are available`); item.quantity += quantity; } else cart.items.push({ productId: product._id, quantity, price: product.price });
+    if (item) { if (product.stock < item.quantity + quantity) throw new Error(`Only ${product.stock} units are available`); item.quantity += quantity; } else cart.items.push({ productId: product._id, quantity, price: product.price, source: ['ai_cross_sell', 'ai_upsell'].includes(args.source) ? args.source : 'customer' });
     cart.subtotal = cart.items.reduce((sum, entry) => sum + entry.price * entry.quantity, 0);
     cart.total = cart.subtotal - cart.discount;
     await cart.save();

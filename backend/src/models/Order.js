@@ -8,6 +8,8 @@ const orderItemSchema = new mongoose.Schema({
   productName: String,
   quantity: Number,
   price: Number,
+  source: { type: String, enum: ['customer', 'ai_cross_sell', 'ai_upsell'], default: 'customer' },
+  aiIncrementalAmount: { type: Number, default: 0, min: 0 },
 });
 
 const orderSchema = new mongoose.Schema(

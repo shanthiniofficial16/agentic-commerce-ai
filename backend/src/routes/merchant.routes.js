@@ -1,5 +1,6 @@
 const express = require('express');
 const { authMiddleware, roleMiddleware } = require('../middleware/auth');
+const { getAnalytics } = require('../controllers/analytics.controller');
 
 const router = express.Router();
 
@@ -8,9 +9,7 @@ router.get('/dashboard', authMiddleware, roleMiddleware('MERCHANT'), (req, res) 
   res.json({ success: true, data: { dashboard: {} } });
 });
 
-router.get('/analytics', authMiddleware, roleMiddleware('MERCHANT'), (req, res) => {
-  res.json({ success: true, data: { analytics: {} } });
-});
+router.get('/analytics', authMiddleware, roleMiddleware('MERCHANT'), getAnalytics);
 
 router.get('/audit', authMiddleware, roleMiddleware('MERCHANT'), (req, res) => {
   res.json({ success: true, data: { auditLogs: [] } });

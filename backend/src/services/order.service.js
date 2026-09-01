@@ -122,7 +122,7 @@ const prepareCartOrder = async ({ userId, merchantId }) => {
     const product = await Product.findOne({ _id: item.productId, merchantId, active: true }).lean();
     if (!product) throw Object.assign(new Error('A cart product is no longer available'), { code: 'PRODUCT_NOT_FOUND', status: 404 });
     if (product.stock < item.quantity) throw Object.assign(new Error(`${product.name} is not available in the requested quantity`), { code: 'OUT_OF_STOCK', status: 409 });
-    items.push({ productId: product._id.toString(), name: product.name, price: product.price, currency: product.currency, quantity: item.quantity, stock: product.stock });
+    items.push({ productId: product._id.toString(), name: product.name, price: product.price, currency: product.currency, quantity: item.quantity, stock: product.stock, source: item.source || 'customer' });
   }
   return { state: 'PENDING_CONFIRMATION', orderPreviewId: `ORDER_PREVIEW_${new mongoose.Types.ObjectId().toString()}`, profile, items, product: { id: items[0].productId, name: items[0].name, price: items[0].price, currency: items[0].currency, quantity: items[0].quantity, stock: items[0].stock }, quantity: items[0].quantity, total: items.reduce((sum, item) => sum + item.price * item.quantity, 0), expiresAt: new Date(Date.now() + 15 * 60 * 1000) };
 };
@@ -244,9 +244,9 @@ const createOrder = async ({ userId, merchantId, pendingOrder, idempotencyKey, p
       if (product) await Product.updateOne({ _id: product._id }, { $inc: { stock: item.quantity } });
       throw Object.assign(new Error(product ? `The price of ${product.name} changed while preparing the order. Please try again.` : 'A product is no longer available in the requested quantity'), { code: product ? 'PRICE_CHANGED' : 'OUT_OF_STOCK', status: 409 });
     }
-    products.push({ ...product, quantity: item.quantity });
+    products.push({ ...product, quantity: item.quantity, source: item.source || 'customer' });
   }
-  const orderItems = products.map((product) => ({ productId: product._id, productName: product.name, quantity: product.quantity, price: product.price }));
+  const orderItems = products.map((product) => ({ productId: product._id, productName: product.name, quantity: product.quantity, price: product.price, source: product.source || 'customer', aiIncrementalAmount: product.source === 'ai_cross_sell' ? product.price * product.quantity : product.aiIncrementalAmount || 0 }));
   const orderTotal = orderItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
   try {
     const isDemoPayment = paymentStatus === 'DEMO_PAID';
@@ -266,7 +266,7 @@ const createOrder = async ({ userId, merchantId, pendingOrder, idempotencyKey, p
       delivery: profile,
       status,
     });
-    return { id: order._id.toString(), productName: products[0].name, quantity: orderItems.reduce((sum, item) => sum + item.quantity, 0), total: order.total, currency: order.currency, status: order.status, paymentStatus: order.paymentStatus, estimatedDeliveryDate: order.estimatedDeliveryDate, delivery: profile, items: orderItems, duplicate: false };
+    return { id: order._id.toString(), productName: products[0].name, quantity: orderItems.reduce((sum, item) => sum + item.quantity, 0), total: order.total, currency: order.currency, status: order.status, paymentStatus: order.paymentStatus, estimatedDeliveryDate: order.estimatedDeliveryDate, delivery: profile, items: order.items, duplicate: false };
   } catch (error) {
     for (const reserved of products) await Product.updateOne({ _id: reserved._id }, { $inc: { stock: reserved.quantity } });
     if (error.code === 11000 && orderKey) {

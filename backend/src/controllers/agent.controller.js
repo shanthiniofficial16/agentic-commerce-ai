@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const Conversation = require('../models/Conversation');
+const AgentAction = require('../models/AgentAction');
 const Merchant = require('../models/Merchant');
 const Product = require('../models/Product');
 const { runAgent, isPurchaseIntent } = require('../services/agent/agentService');
@@ -103,10 +104,14 @@ const chat = async (req, res) => {
       const recommendation = conversation.pendingRecommendation;
       conversation.pendingRecommendation = undefined;
       if (confirmationDecision === 'cancel') {
+        await AgentAction.create({ sessionId: conversation.sessionId, userId: req.userId, merchantId: conversation.merchantId, action: recommendation.type === 'UPSELL' ? 'UPSELL_REJECTED' : 'CROSS_SELL_REJECTED', input: { productId: recommendation.productId }, status: 'SUCCESS' });
         await conversation.save();
         return res.json({ success: true, data: { message: 'No problem. I kept your cart unchanged.', sessionId: conversation.sessionId, recommendationDeclined: true } });
       }
-      const cartResult = await executeTool('addToCart', { productId: recommendation.productId, quantity: 1 }, { userId: req.userId, merchantId: conversation.merchantId });
+      const recommendationType = recommendation.type === 'UPSELL' ? 'ai_upsell' : 'ai_cross_sell';
+      const action = recommendation.type === 'UPSELL' ? 'UPSELL_ACCEPTED' : 'CROSS_SELL_ACCEPTED';
+      const cartResult = await executeTool('addToCart', { productId: recommendation.productId, quantity: 1, source: recommendationType }, { userId: req.userId, merchantId: conversation.merchantId });
+      await AgentAction.create({ sessionId: conversation.sessionId, userId: req.userId, merchantId: conversation.merchantId, action, input: { productId: recommendation.productId }, output: { productId: cartResult.product.id, price: cartResult.product.price }, status: 'SUCCESS', amount: cartResult.product.price });
       await conversation.save();
       return res.json({ success: true, data: { message: `${cartResult.product.name} was added to your cart. Your cart total is now ₹${Number(cartResult.total).toLocaleString('en-IN')}. Say “Buy it” when you are ready for checkout.`, products: [cartResult.product], sessionId: conversation.sessionId, recommendationAccepted: true } });
     }
@@ -160,6 +165,7 @@ const chat = async (req, res) => {
     }
     if (result.pendingRecommendation) {
       conversation.pendingRecommendation = result.pendingRecommendation;
+      await AgentAction.create({ sessionId: conversation.sessionId, userId: req.userId, merchantId: conversation.merchantId, action: result.pendingRecommendation.type === 'UPSELL' ? 'UPSELL_RECOMMENDED' : 'CROSS_SELL_RECOMMENDED', input: { productId: result.pendingRecommendation.productId }, status: 'SUCCESS' });
     }
     if (result.selectedProductId) {
       conversation.selectedProductId = result.selectedProductId;

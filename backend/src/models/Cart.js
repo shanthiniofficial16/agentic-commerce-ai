@@ -16,6 +16,7 @@ const cartItemSchema = new mongoose.Schema({
     required: true,
     min: 0,
   },
+  source: { type: String, enum: ['customer', 'ai_cross_sell', 'ai_upsell'], default: 'customer' },
 });
 
 const cartSchema = new mongoose.Schema(

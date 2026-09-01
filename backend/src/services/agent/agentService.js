@@ -319,7 +319,7 @@ const resolveComplementaryProducts = async ({ message, history = [], context }) 
       description: product.shortDescription || product.description,
     })),
     pendingOrder: null,
-    pendingRecommendation: { productId: selected[0]._id.toString(), productName: selected[0].name },
+    pendingRecommendation: { productId: selected[0]._id.toString(), productName: selected[0].name, type: 'CROSS_SELL' },
   };
 };
 
