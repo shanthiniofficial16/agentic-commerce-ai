@@ -70,7 +70,6 @@ const createCheckoutOrderForUser = async ({ userId, merchantId, frontendAmount }
     throw Object.assign(new Error('The final payable amount is invalid.'), { code: 'INVALID_AMOUNT', status: 400 });
   }
 
-  const receipt = `checkout_${userId}_${merchantId}_${Date.now()}`;
   const amountInPaise = Math.round(safeAmount * 100);
   const orderKey = `checkout:${userId}:${merchantId}:${Date.now()}`;
 
@@ -89,6 +88,7 @@ const createCheckoutOrderForUser = async ({ userId, merchantId, frontendAmount }
     paymentStatus: 'PENDING',
     delivery: {},
   });
+  const receipt = `checkout_${String(orderPayload._id).slice(-24)}`;
 
   const paymentRecord = await Payment.create({
     userId,
