@@ -125,6 +125,20 @@ describe('revenue growth engine', () => {
     expect(result.recommendations.some((item) => item.name === 'Running Shoes')).toBe(false);
   });
 
+  test('rejects relevant accessories below the dynamic 10% minimum price', () => {
+    const product = { ...laptops[0], price: 40000 };
+    const result = getCrossSellRecommendations({
+      product,
+      products: [
+        { _id: 'below-minimum', name: 'Laptop Bag', category: 'Accessories', price: 3999, stock: 5, active: true, tags: ['laptop', 'bag'] },
+        { _id: 'at-minimum', name: 'Wireless Mouse', category: 'Accessories', price: 4000, stock: 5, active: true, tags: ['laptop', 'mouse'] },
+      ],
+    });
+
+    expect(result.targetPrice).toBe(4000);
+    expect(result.recommendations.map((item) => item.name)).toEqual(['Wireless Mouse']);
+  });
+
   test('does not add a rejected accessory to the cart', () => {
     const offer = getCrossSellRecommendations({ product: laptops[1], products: accessories }).recommendations[0];
     const result = trackRevenueAttribution({
