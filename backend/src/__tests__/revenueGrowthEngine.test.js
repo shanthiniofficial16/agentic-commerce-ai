@@ -91,13 +91,42 @@ describe('revenue growth engine', () => {
       products: accessories,
     });
 
-    expect(crossSell).toHaveLength(3);
-    expect(crossSell.some((item) => item.name === 'Laptop Sleeve')).toBe(true);
-    expect(crossSell.some((item) => item.name === 'Wireless Mouse')).toBe(true);
+    expect(crossSell.recommendations).toHaveLength(3);
+    expect(crossSell.recommendations.some((item) => item.name === 'Laptop Sleeve')).toBe(true);
+    expect(crossSell.recommendations.some((item) => item.name === 'Wireless Mouse')).toBe(true);
+  });
+
+  test('prioritizes relevance before 10% price matching and rejects unrelated products', () => {
+    const product = {
+      _id: 'lap-target',
+      name: 'PixelDesk Pro 15',
+      category: 'Electronics',
+      subcategory: 'Laptops',
+      price: 40000,
+      stock: 4,
+      active: true,
+      tags: ['laptop', 'work', 'gaming'],
+    };
+
+    const candidates = [
+      { _id: 'acc-1', name: 'Laptop Bag', category: 'Accessories', subcategory: 'Bags', price: 3799, stock: 5, active: true, tags: ['laptop', 'bag', 'travel'] },
+      { _id: 'acc-2', name: 'Wireless Mouse', category: 'Accessories', subcategory: 'Desk', price: 3999, stock: 5, active: true, tags: ['mouse', 'laptop', 'work'] },
+      { _id: 'acc-3', name: 'USB-C Hub', category: 'Accessories', subcategory: 'Desk', price: 4299, stock: 5, active: true, tags: ['hub', 'laptop', 'connectivity'] },
+      { _id: 'acc-4', name: 'Saree', category: 'Fashion', subcategory: 'Sarees', price: 3999, stock: 5, active: true, tags: ['ethnic', 'sale'] },
+      { _id: 'acc-5', name: 'Running Shoes', category: 'Fashion', subcategory: 'Shoes', price: 4099, stock: 5, active: true, tags: ['sport', 'running'] },
+    ];
+
+    const result = getCrossSellRecommendations({ product, products: candidates });
+
+    expect(result.selectedProductId).toBe('lap-target');
+    expect(result.targetPrice).toBe(4000);
+    expect(result.recommendations.map((item) => item.name)).toEqual(['Laptop Bag', 'Wireless Mouse', 'USB-C Hub']);
+    expect(result.recommendations.some((item) => item.name === 'Saree')).toBe(false);
+    expect(result.recommendations.some((item) => item.name === 'Running Shoes')).toBe(false);
   });
 
   test('does not add a rejected accessory to the cart', () => {
-    const offer = getCrossSellRecommendations({ product: laptops[1], products: accessories })[0];
+    const offer = getCrossSellRecommendations({ product: laptops[1], products: accessories }).recommendations[0];
     const result = trackRevenueAttribution({
       originalProductPrice: laptops[1].price,
       upsellRevenue: 0,

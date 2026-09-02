@@ -142,40 +142,214 @@ const getLaptopRecommendation = ({ products = [], message = '' }) => {
   };
 };
 
+const RELATIONSHIP_KEYWORDS = {
+  laptop: ['laptop', 'bag', 'sleeve', 'mouse', 'keyboard', 'hub', 'stand', 'dock', 'cooling', 'case', 'monitor'],
+  phone: ['phone', 'case', 'charger', 'power', 'bank', 'earbud', 'screen', 'protector', 'cable'],
+  camera: ['camera', 'bag', 'memory', 'card', 'tripod', 'battery', 'strap', 'lens', 'case'],
+  headphones: ['headphone', 'case', 'adapter', 'stand', 'cable', 'earbud', 'audio'],
+};
+
+const normalizeTokens = (value = '') => String(value || '')
+  .toLowerCase()
+  .replace(/[^a-z0-9\s]/g, ' ')
+  .split(/\s+/)
+  .map((token) => token.trim())
+  .filter(Boolean);
+
+const getProductTokens = (product = {}) => {
+  const values = [
+    product.name,
+    product.category,
+    product.subcategory,
+    product.brand,
+    product.shortDescription,
+    product.description,
+    ...(Array.isArray(product.tags) ? product.tags : []),
+    ...(Array.isArray(product.keyFeatures) ? product.keyFeatures : []),
+    ...(product.aiMetadata?.useCases || []),
+    ...(product.aiMetadata?.intentTags || []),
+    ...(product.aiMetadata?.recommendationReasons || []),
+    ...(product.specifications ? Object.values(product.specifications).filter(Boolean) : []),
+  ];
+
+  const tokenSet = new Set();
+  values.forEach((value) => {
+    normalizeTokens(value).forEach((token) => tokenSet.add(token));
+  });
+  return [...tokenSet];
+};
+
+const detectProductFamily = (product = {}) => {
+  const text = [product.name, product.category, product.subcategory, ...(product.tags || [])].join(' ').toLowerCase();
+  if (/(laptop|notebook|ultrabook)/i.test(text)) return 'laptop';
+  if (/(phone|smartphone|mobile)/i.test(text)) return 'phone';
+  if (/(camera|dslr|mirrorless)/i.test(text)) return 'camera';
+  if (/(headphone|earphone|earbuds|audio)/i.test(text)) return 'headphones';
+  return null;
+};
+
+const getRelationshipPriority = ({ selectedFamily, candidate }) => {
+  const candidateText = [candidate.name, candidate.category, candidate.subcategory, ...(candidate.tags || [])].join(' ').toLowerCase();
+
+  if (selectedFamily === 'laptop') {
+    if (/laptop.*(bag|sleeve|case)|\b(bag|sleeve|case)\b/i.test(candidateText)) return 100;
+    if (/mouse/i.test(candidateText)) return 90;
+    if (/keyboard|hub|dock|stand|cooling|pad/i.test(candidateText)) return 85;
+    return 60;
+  }
+
+  if (selectedFamily === 'phone') {
+    if (/case|screen|protector/i.test(candidateText)) return 100;
+    if (/charger|power|bank|cable/i.test(candidateText)) return 90;
+    if (/earbud|audio/i.test(candidateText)) return 80;
+    return 60;
+  }
+
+  if (selectedFamily === 'camera') {
+    if (/bag|case|strap/i.test(candidateText)) return 100;
+    if (/memory|card|battery|tripod/i.test(candidateText)) return 90;
+    return 60;
+  }
+
+  if (selectedFamily === 'headphones') {
+    if (/case|adapter|stand|cable/i.test(candidateText)) return 100;
+    return 60;
+  }
+
+  return 50;
+};
+
+const getRelationshipPriorityByName = ({ selectedFamily, candidate }) => {
+  const text = [candidate.name, candidate.category, candidate.subcategory, ...(candidate.tags || [])].join(' ').toLowerCase();
+  if (selectedFamily === 'laptop') {
+    if (/laptop bag|bag/i.test(text)) return 100;
+    if (/wireless mouse|mouse/i.test(text)) return 90;
+    if (/keyboard|hub|dock|stand|cooling|pad/i.test(text)) return 85;
+  }
+  if (selectedFamily === 'phone') {
+    if (/case|screen protector|protector|phone case/i.test(text)) return 100;
+    if (/charger|power bank|cable/i.test(text)) return 90;
+    if (/earbuds|earbud|audio/i.test(text)) return 80;
+  }
+  if (selectedFamily === 'camera') {
+    if (/camera bag|bag|strap/i.test(text)) return 100;
+    if (/memory card|tripod|battery/i.test(text)) return 90;
+  }
+  if (selectedFamily === 'headphones') {
+    if (/case|adapter|stand|cable/i.test(text)) return 100;
+  }
+  return 60;
+};
+
+const getRelationshipReason = ({ selectedFamily, candidate }) => {
+  const candidateText = [candidate.name, candidate.category, candidate.subcategory, ...(candidate.tags || [])].join(' ').toLowerCase();
+
+  if (selectedFamily === 'laptop') {
+    if (/bag|sleeve|case/i.test(candidateText)) return 'Protects and carries your laptop comfortably.';
+    if (/mouse/i.test(candidateText)) return 'Adds a more comfortable everyday setup for work and browsing.';
+    if (/keyboard|hub|dock|stand|cooling|pad/i.test(candidateText)) return 'Improves flexibility and productivity around your laptop.';
+  }
+
+  if (selectedFamily === 'phone') {
+    if (/case|screen|protector/i.test(candidateText)) return 'Protects and shields your phone from daily wear.';
+    if (/charger|power|bank|cable/i.test(candidateText)) return 'Keeps your phone powered and ready throughout the day.';
+    if (/earbud|audio/i.test(candidateText)) return 'Pairs naturally with your phone for calls and music.';
+  }
+
+  if (selectedFamily === 'camera') {
+    if (/bag|case|strap/i.test(candidateText)) return 'Helps store and protect your camera gear.';
+    if (/memory|card|battery|tripod/i.test(candidateText)) return 'Extends shooting flexibility and reliability.';
+  }
+
+  if (selectedFamily === 'headphones') {
+    if (/case|adapter|stand|cable/i.test(candidateText)) return 'Complements your headphones with better portability and connectivity.';
+  }
+
+  return 'Pairs well with your selected product for everyday use.';
+};
+
+const getCompatibilityScore = ({ selected, candidate }) => {
+  const selectedTokens = new Set(getProductTokens(selected));
+  const candidateTokens = new Set(getProductTokens(candidate));
+  const shared = [...selectedTokens].filter((token) => candidateTokens.has(token));
+
+  const family = detectProductFamily(selected) || detectProductFamily(candidate);
+  const familyKeywords = family ? RELATIONSHIP_KEYWORDS[family] || [] : [];
+  const familyMatches = [...candidateTokens].filter((token) => familyKeywords.includes(token)).length;
+
+  let score = 0;
+  if (shared.length) score += shared.length * 12;
+  if (familyMatches) score += familyMatches * 25;
+  if (candidate.category === 'Accessories' || candidate.subcategory === 'Accessories') score += 10;
+
+  return score;
+};
+
+const isRelevantCrossSellCandidate = ({ selected, candidate }) => {
+  if (!selected || !candidate) return false;
+  if (String(candidate._id || candidate.id) === String(selected._id || selected.id)) return false;
+  if (candidate.active === false) return false;
+  if (Number(candidate.stock || 0) <= 0) return false;
+
+  const selectedFamily = detectProductFamily(selected);
+  const candidateText = [candidate.name, candidate.category, candidate.subcategory, ...(candidate.tags || [])].join(' ').toLowerCase();
+  const candidateTokens = new Set(normalizeTokens(candidateText));
+
+  if (!selectedFamily) return false;
+
+  const requiredKeywords = RELATIONSHIP_KEYWORDS[selectedFamily] || [];
+  const directMatch = requiredKeywords.some((keyword) => candidateTokens.has(keyword));
+  const selectedNameTokens = new Set(normalizeTokens(selected.name));
+  const sharedFamilyToken = [...selectedNameTokens].some((token) => candidateTokens.has(token) && (token === 'laptop' || token === 'phone' || token === 'camera' || token === 'headphone' || token === 'earbuds'));
+
+  if (!directMatch && !sharedFamilyToken) {
+    const candidateRelated = Array.isArray(candidate.relatedProducts) || Array.isArray(candidate.aiMetadata?.complementaryProductIds);
+    const directReference = candidateRelated && [candidate.relatedProducts, candidate.aiMetadata?.complementaryProductIds].flat().some((id) => String(id) === String(selected._id || selected.id));
+    if (!directReference) return false;
+  }
+
+  return true;
+};
+
 const buildCrossSellRecommendationSet = ({ product, products = [], maxItems = 3 }) => {
   if (!product || !Array.isArray(products) || !products.length) return [];
 
-  const targetText = `${product.name || ''} ${product.category || ''} ${product.subcategory || ''} ${(product.tags || []).join(' ')}`.toLowerCase();
-  const accessoryRules = [
-    { match: /laptop.*(bag|sleeve|travel|case)/i, reason: 'Protects and carries your laptop comfortably.', benefit: 'Carry and protect your laptop with ease.' },
-    { match: /laptop.*(mouse|keyboard|hub)/i, reason: 'Adds a more comfortable workstation setup.', benefit: 'Improves comfort and productivity while you work.' },
-    { match: /laptop.*(stand|cooling|pad)/i, reason: 'Improves airflow and comfort during longer sessions.', benefit: 'Keeps your setup comfortable and efficient.' },
-    { match: /mouse/i, reason: 'Helpful for everyday productivity and smooth navigation.', benefit: 'A more comfortable everyday mouse for daily work.' },
-    { match: /bag|sleeve/i, reason: 'Keeps your laptop safe while you travel or commute.', benefit: 'Protects and carries your laptop safely.' },
-    { match: /hub|keyboard/i, reason: 'Expands connectivity and makes work easier.', benefit: 'Connects more devices without clutter.' },
-  ];
+  const selectedFamily = detectProductFamily(product);
+  const targetPrice = Number(product.price || 0) * 0.10;
 
-  const scored = products
-    .filter((item) => item && item.active !== false && Number(item.stock || 0) > 0)
+  const ranked = products
+    .filter((item) => item && isRelevantCrossSellCandidate({ selected: product, candidate: item }))
     .map((item) => {
-      const haystack = `${item.name || ''} ${item.category || ''} ${item.subcategory || ''} ${(item.tags || []).join(' ')}`.toLowerCase();
-      let score = 0;
-      if (item.category === 'Accessories') score += 30;
-      if (haystack.includes('laptop') && targetText.includes('laptop')) score += 25;
-      if (haystack.includes('mouse') || haystack.includes('bag') || haystack.includes('hub') || haystack.includes('keyboard')) score += 25;
-      if (targetText.includes('laptop') && (haystack.includes('bag') || haystack.includes('mouse') || haystack.includes('hub') || haystack.includes('keyboard'))) score += 35;
+      const relevanceScore = getCompatibilityScore({ selected: product, candidate: item });
+      const relationshipPriority = getRelationshipPriorityByName({ selectedFamily, candidate: item });
+      const compatibilityScore = relevanceScore + relationshipPriority;
+      const priceDifference = Math.abs(Number(item.price || 0) - targetPrice);
+      const reason = getRelationshipReason({ selectedFamily, candidate: item });
+      const benefit = reason;
 
-      const match = accessoryRules.find((rule) => rule.match.test(haystack) || rule.match.test(targetText));
-      const reason = match ? match.reason : 'Pairs well with your laptop and supports everyday use.';
-      const benefit = match ? match.benefit : 'Useful for day-to-day setup and portability.';
-
-      return { item, score, reason, benefit, available: true };
+      return {
+        ...item,
+        id: item._id ? item._id.toString() : (item.id || item._id),
+        relevanceScore,
+        compatibilityScore,
+        relationshipPriority,
+        priceDifference,
+        targetPrice,
+        reason,
+        benefit,
+        available: Number(item.stock || 0) > 0,
+      };
     })
-    .filter(({ score }) => score > 0)
-    .sort((a, b) => b.score - a.score)
+    .filter((item) => Number(item.stock || 0) > 0)
+    .sort((a, b) => {
+      if (b.relationshipPriority !== a.relationshipPriority) return b.relationshipPriority - a.relationshipPriority;
+      if (b.compatibilityScore !== a.compatibilityScore) return b.compatibilityScore - a.compatibilityScore;
+      if (b.relevanceScore !== a.relevanceScore) return b.relevanceScore - a.relevanceScore;
+      return a.priceDifference - b.priceDifference;
+    })
     .slice(0, Number(maxItems) || 3)
-    .map(({ item, reason, benefit }) => ({
-      id: item._id ? item._id.toString() : item.id,
+    .map((item) => ({
+      id: item.id,
       name: item.name,
       price: Number(item.price || 0),
       stock: Number(item.stock || 0),
@@ -184,16 +358,22 @@ const buildCrossSellRecommendationSet = ({ product, products = [], maxItems = 3 
       subcategory: item.subcategory,
       description: item.shortDescription || item.description || 'Useful add-on for everyday setup.',
       image: item.images?.[0] || null,
-      reason,
-      benefit,
+      reason: item.reason,
+      benefit: item.benefit,
       available: Number(item.stock || 0) > 0,
+      relevanceScore: item.relevanceScore,
+      compatibilityScore: item.compatibilityScore,
+      priceDifference: item.priceDifference,
+      targetPrice,
     }));
 
-  return scored.filter((item) => item && item.name && item.available);
+  return ranked.filter((item) => item && item.name && item.available);
 };
 
 const getCrossSellRecommendations = ({ product, products = [] }) => {
-  return buildCrossSellRecommendationSet({ product, products, maxItems: 3 }).map((item) => ({
+  const selectedProductId = product?._id ? product._id.toString() : (product?.id || null);
+  const targetPrice = Number(product?.price || 0) * 0.10;
+  const recommendations = buildCrossSellRecommendationSet({ product, products, maxItems: 3 }).map((item) => ({
     _id: item.id,
     id: item.id,
     name: item.name,
@@ -204,11 +384,20 @@ const getCrossSellRecommendations = ({ product, products = [] }) => {
     subcategory: item.subcategory,
     description: item.description,
     images: item.image ? [item.image] : [],
-    tags: [item.category.toLowerCase()],
+    tags: [item.category ? item.category.toLowerCase() : 'accessory'],
     active: true,
     benefit: item.benefit,
     reason: item.reason,
+    priceDifference: item.priceDifference,
+    relevanceScore: item.relevanceScore,
+    compatibilityScore: item.compatibilityScore,
   }));
+
+  return {
+    selectedProductId,
+    targetPrice,
+    recommendations,
+  };
 };
 
 const calculateAdditionalRevenue = ({ originalProductPrice = 0, upsellRevenue = 0, crossSellRevenue = 0 }) => {
