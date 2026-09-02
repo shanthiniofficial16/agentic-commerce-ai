@@ -223,6 +223,19 @@ const verifyAndFinalizePayment = async ({ userId, merchantId, pendingOrder, razo
   paymentRecord.status = 'VERIFIED_SUCCESS';
   paymentRecord.verified = true;
   await paymentRecord.save();
+  if (paymentRecord.orderId) {
+    const existingOrder = await Order.findOne({ _id: paymentRecord.orderId, userId, merchantId });
+    if (existingOrder && existingOrder.paymentStatus === 'PENDING') {
+      existingOrder.paymentStatus = 'PAID';
+      existingOrder.status = 'PAID';
+      existingOrder.crossSellRevenue = existingOrder.items
+        .filter((item) => item.source === 'ai_cross_sell')
+        .reduce((sum, item) => sum + Number(item.price || 0) * Number(item.quantity || 0), 0);
+      await existingOrder.save();
+      await Payment.updateOne({ _id: paymentRecord._id }, { $set: { orderId: existingOrder._id } });
+      return { payment: paymentRecord.toObject(), order: { id: existingOrder._id.toString(), productName: existingOrder.items[0]?.productName, quantity: existingOrder.items.reduce((sum, item) => sum + item.quantity, 0), total: existingOrder.total, currency: existingOrder.currency, status: existingOrder.status, paymentStatus: existingOrder.paymentStatus, estimatedDeliveryDate: existingOrder.estimatedDeliveryDate, delivery: existingOrder.delivery, items: existingOrder.items, duplicate: false } };
+    }
+  }
   const order = await createOrder({ userId, merchantId, pendingOrder, idempotencyKey, paymentId: paymentRecord._id.toString(), paymentStatus: 'PAID' });
   await Payment.updateOne({ _id: paymentRecord._id }, { $set: { orderId: order.id } });
   return { payment: paymentRecord.toObject(), order };
@@ -254,6 +267,8 @@ const createOrder = async ({ userId, merchantId, pendingOrder, idempotencyKey, p
   }
   const orderItems = products.map((product) => ({ productId: product._id, productName: product.name, quantity: product.quantity, price: product.price, source: product.source || 'customer', aiIncrementalAmount: product.source === 'ai_cross_sell' ? product.price * product.quantity : product.aiIncrementalAmount || 0 }));
   const orderTotal = orderItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
+  const originalProductValue = orderItems.filter((item) => item.source === 'customer').reduce((sum, item) => sum + item.price * item.quantity, 0);
+  const crossSellRevenue = orderItems.filter((item) => item.source === 'ai_cross_sell').reduce((sum, item) => sum + item.price * item.quantity, 0);
   try {
     const status = paymentStatus === 'PAID' ? 'PAID' : 'PENDING_PAYMENT';
     const order = await Order.create({
@@ -267,6 +282,9 @@ const createOrder = async ({ userId, merchantId, pendingOrder, idempotencyKey, p
       items: orderItems,
       subtotal: orderTotal,
       total: orderTotal,
+      originalProductValue,
+      crossSellRevenue: paymentStatus === 'PAID' ? crossSellRevenue : 0,
+      finalOrderValue: orderTotal,
       currency: products[0].currency,
       delivery: profile,
       status,

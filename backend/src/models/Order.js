@@ -40,6 +40,9 @@ const orderSchema = new mongoose.Schema(
       required: true,
       min: 0,
     },
+    originalProductValue: { type: Number, default: 0, min: 0 },
+    crossSellRevenue: { type: Number, default: 0, min: 0 },
+    finalOrderValue: { type: Number, default: 0, min: 0 },
     currency: {
       type: String,
       default: 'INR',

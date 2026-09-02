@@ -19,6 +19,7 @@ const calculateCartTotal = async ({ userId, merchantId }) => {
   }
 
   let subtotal = 0;
+  const validatedItems = [];
   for (const item of cart.items) {
     const product = await Product.findById(item.productId);
     const productData = product && typeof product.toObject === 'function' ? product.toObject() : product;
@@ -41,13 +42,21 @@ const calculateCartTotal = async ({ userId, merchantId }) => {
     }
 
     subtotal += Number(productData.price) * quantity;
+    validatedItems.push({
+      productId: productData._id,
+      productName: productData.name,
+      quantity,
+      price: Number(productData.price),
+      source: item.source || 'customer',
+      aiIncrementalAmount: item.source === 'ai_cross_sell' ? Number(productData.price) * quantity : 0,
+    });
   }
 
-  return { cart, subtotal };
+  return { cart, subtotal, validatedItems };
 };
 
 const createCheckoutOrderForUser = async ({ userId, merchantId, frontendAmount }) => {
-  const { cart, subtotal } = await calculateCartTotal({ userId, merchantId });
+  const { cart, subtotal, validatedItems } = await calculateCartTotal({ userId, merchantId });
 
   if (frontendAmount !== undefined) {
     const providedAmount = normalizeAmount(frontendAmount);
@@ -69,16 +78,12 @@ const createCheckoutOrderForUser = async ({ userId, merchantId, frontendAmount }
     userId,
     merchantId,
     idempotencyKey: orderKey,
-    items: cart.items.map((item) => ({
-      productId: item.productId,
-      productName: item.productName || 'Product',
-      quantity: item.quantity,
-      price: Number(item.price || 0),
-      source: 'customer',
-      aiIncrementalAmount: 0,
-    })),
+    items: validatedItems,
     subtotal: safeAmount,
     total: safeAmount,
+    originalProductValue: validatedItems.filter((item) => item.source === 'customer').reduce((sum, item) => sum + item.price * item.quantity, 0),
+    crossSellRevenue: 0,
+    finalOrderValue: safeAmount,
     currency: 'INR',
     status: 'PENDING_PAYMENT',
     paymentStatus: 'PENDING',

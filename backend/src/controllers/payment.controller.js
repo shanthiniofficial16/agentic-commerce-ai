@@ -52,7 +52,9 @@ const verify = async (req, res) => {
     const { sessionId, internalOrderId, razorpay_order_id: razorpayOrderId, razorpay_payment_id: razorpayPaymentId, razorpay_signature: razorpaySignature } = req.body;
     const paymentRecord = await Payment.findOne({
       userId: req.userId,
-      ...(internalOrderId ? { orderId: mongoose.Types.ObjectId.isValid(internalOrderId) ? new mongoose.Types.ObjectId(internalOrderId) : internalOrderId } : {}),
+      ...(internalOrderId
+        ? { $or: [{ _id: mongoose.Types.ObjectId.isValid(internalOrderId) ? new mongoose.Types.ObjectId(internalOrderId) : internalOrderId }, { orderId: mongoose.Types.ObjectId.isValid(internalOrderId) ? new mongoose.Types.ObjectId(internalOrderId) : internalOrderId }] }
+        : {}),
       ...(razorpayOrderId ? { razorpayOrderId } : {}),
     });
 
