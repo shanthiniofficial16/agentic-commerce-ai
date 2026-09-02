@@ -33,10 +33,12 @@ export function Assistant({ onAdd, onNotify }) {
       const result = await sendAgentMessage(text, sessionId || undefined, undefined, contextProduct?._id)
       const nextSessionId = result?.sessionId || sessionId || undefined
       if (nextSessionId) setSessionId(nextSessionId)
+
+      const isCheckoutStage = Boolean(result?.orderPreview || result?.pendingConfirmation)
       setOrderPreview(result?.orderPreview || null)
       const nextCrossSell = Array.isArray(result?.crossSell) ? result.crossSell : []
-      setCrossSellItems(nextCrossSell)
-      setCrossSellMessage(nextCrossSell.length ? 'COMPLETE YOUR SETUP' : '')
+      setCrossSellItems(isCheckoutStage ? nextCrossSell : [])
+      setCrossSellMessage(isCheckoutStage && nextCrossSell.length ? 'COMPLETE YOUR SETUP' : '')
       setMessages((items) => [...items, {
         role: 'agent',
         text: typeof result?.message === 'string' && result.message.trim() ? result.message : 'I could not generate a response for that request.',

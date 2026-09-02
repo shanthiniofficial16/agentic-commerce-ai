@@ -1,4 +1,4 @@
-const { isPurchaseIntent, isOrderRequest, stripComplementaryClauses } = require('../services/agent/agentService');
+const { isPurchaseIntent, isOrderRequest, stripComplementaryClauses, shouldGenerateCheckoutRecommendations } = require('../services/agent/agentService');
 
 describe('purchase intent detection for checkout flow', () => {
   test('recognizes direct product purchase phrases', () => {
@@ -19,5 +19,12 @@ describe('purchase intent detection for checkout flow', () => {
   test('preserves the product name when asking for complementary accessories', () => {
     const cleaned = stripComplementaryClauses('Suggest a complementary accessory for CodeCraft Laptop 162 Plus');
     expect(cleaned).toBe('CodeCraft Laptop 162 Plus');
+  });
+
+  test('does not trigger checkout recommendations during product discovery', () => {
+    expect(shouldGenerateCheckoutRecommendations({ message: 'I need a laptop' })).toBe(false);
+    expect(shouldGenerateCheckoutRecommendations({ message: 'I want to buy PixelDesk Air Laptop' })).toBe(false);
+    expect(shouldGenerateCheckoutRecommendations({ message: 'Place order' })).toBe(true);
+    expect(shouldGenerateCheckoutRecommendations({ message: 'Proceed to checkout' })).toBe(true);
   });
 });

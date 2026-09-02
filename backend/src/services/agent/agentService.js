@@ -98,6 +98,14 @@ const isPurchaseIntent = (message) => {
 };
 
 const isOrderRequest = (message) => isPurchaseIntent(message) || /\b(buy|proceed|place|confirm|order|purchase)\b/.test(message.toLowerCase());
+const explicitCheckoutPhrase = /\b(place order|place the order|checkout|proceed to order|proceed to checkout|complete my order|buy it|purchase it|confirm my order|go to checkout)\b/i;
+const shouldGenerateCheckoutRecommendations = ({ message = '', context = {} }) => {
+  if (context.pendingOrder && ['AWAITING_APPROVAL', 'PENDING_CONFIRMATION', 'PROFILE_REQUIRED'].includes(context.pendingOrder.state)) {
+    return true;
+  }
+
+  return explicitCheckoutPhrase.test(String(message));
+};
 const isOrderHistoryRequest = (message) => /\b(my orders|recent orders|what did i order|has my order been placed|where is my order|order status|when will i receive|when will .* arrive|expected delivery|delivery date)\b/i.test(message);
 const formatOrderHistory = (orders, message) => {
   if (!orders.length) return { text: 'I could not find any orders in your account.', products: [], pendingOrder: null };
@@ -527,6 +535,10 @@ const resolveSpecificProductRequest = async ({ message, history = [], context })
 const resolveCombinedShoppingIntent = async ({ message, history = [], context }) => {
   if (!isComplementaryRequest(message)) return null;
 
+  if (!shouldGenerateCheckoutRecommendations({ message, context })) {
+    return null;
+  }
+
   const cleanedMessage = stripComplementaryClauses(message);
   if (!cleanedMessage || cleanedMessage.length < 2) return null;
 
@@ -574,7 +586,9 @@ const resolveCombinedShoppingIntent = async ({ message, history = [], context })
     ? `${primaryText}\n\n${complementary.text}`
     : primaryText;
 
-  const crossSell = mainProduct && Array.isArray(products) ? buildCrossSellRecommendationSet({ product: mainProduct, products: products.slice(0, 5), maxItems: 3 }) : [];
+  const crossSell = shouldGenerateCheckoutRecommendations({ message, context }) && mainProduct && Array.isArray(products)
+    ? buildCrossSellRecommendationSet({ product: mainProduct, products: products.slice(0, 5), maxItems: 3 })
+    : [];
 
   return {
     text,
@@ -604,7 +618,26 @@ const runAgent = async ({ message, history = [], context }) => {
   }
 
   const isLaptopInquiry = /\blaptop\b/i.test(message) && !/\b(add|buy|purchase|order|place)\b/i.test(message);
-  if (isLaptopInquiry) {
+  if (isLaptopInquiry && !shouldGenerateCheckoutRecommendations({ message, context })) {
+    const searchResult = await executeTool('searchProducts', { category: 'Laptops', inStock: true, query: message, keywords: normalizeProductQuery(message) }, context);
+    const products = Array.isArray(searchResult?.products) ? searchResult.products : [];
+    const recommendation = getLaptopRecommendation({ products, message });
+    if (!recommendation.noMatch) {
+      return {
+        text: recommendation.summary,
+        products: [recommendation.product],
+        pendingOrder: null,
+        selectedProductId: recommendation.product.id || recommendation.product._id?.toString?.() || null,
+      };
+    }
+    return {
+      text: recommendation.message,
+      products: [],
+      pendingOrder: null,
+    };
+  }
+
+  if (isLaptopInquiry && shouldGenerateCheckoutRecommendations({ message, context })) {
     const searchResult = await executeTool('searchProducts', { category: 'Laptops', inStock: true, query: message, keywords: normalizeProductQuery(message) }, context);
     const products = Array.isArray(searchResult?.products) ? searchResult.products : [];
     const recommendation = getLaptopRecommendation({ products, message });
@@ -629,8 +662,27 @@ const runAgent = async ({ message, history = [], context }) => {
     };
   }
 
+  if (isLaptopInquiry) {
+    const searchResult = await executeTool('searchProducts', { category: 'Laptops', inStock: true, query: message, keywords: normalizeProductQuery(message) }, context);
+    const products = Array.isArray(searchResult?.products) ? searchResult.products : [];
+    const recommendation = getLaptopRecommendation({ products, message });
+    if (!recommendation.noMatch) {
+      return {
+        text: recommendation.summary,
+        products: [recommendation.product],
+        pendingOrder: null,
+        selectedProductId: recommendation.product.id || recommendation.product._id?.toString?.() || null,
+      };
+    }
+    return {
+      text: recommendation.message,
+      products: [],
+      pendingOrder: null,
+    };
+  }
+
   const budgetSearch = parseBudgetConstraints(message);
-  if (isComplementaryRequest(message)) {
+  if (isComplementaryRequest(message) && shouldGenerateCheckoutRecommendations({ message, context })) {
     const complementary = await resolveComplementaryProducts({ message, history, context });
     if (complementary) {
       return complementary;
@@ -949,6 +1001,7 @@ module.exports = {
   formatBudgetText,
   isPurchaseIntent,
   isOrderRequest,
+  shouldGenerateCheckoutRecommendations,
   stripComplementaryClauses,
   findUpsellAlternative,
   findAndRecommendUpsell,
