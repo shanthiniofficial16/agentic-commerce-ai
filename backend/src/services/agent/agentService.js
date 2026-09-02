@@ -1,5 +1,6 @@
 const Product = require('../../models/Product');
 const { generateCompletion } = require('../openrouter.provider');
+const { getLaptopRecommendation, getCrossSellRecommendations } = require('../revenueGrowthService');
 const { SYSTEM_PROMPT } = require('./prompts');
 const { tools, executeTool } = require('./tools');
 
@@ -584,9 +585,29 @@ const runAgent = async ({ message, history = [], context }) => {
     stock: context.currentProduct.stock,
   } : null;
 
-  const combinedIntent = await resolveCombinedShoppingIntent({ message, history, context });
+   const combinedIntent = await resolveCombinedShoppingIntent({ message, history, context });
   if (combinedIntent) {
     return combinedIntent;
+  }
+
+  const isLaptopInquiry = /\blaptop\b/i.test(message) && !/\b(add|buy|purchase|order|place)\b/i.test(message);
+  if (isLaptopInquiry) {
+    const searchResult = await executeTool('searchProducts', { category: 'Laptops', inStock: true, query: message, keywords: normalizeProductQuery(message) }, context);
+    const products = Array.isArray(searchResult?.products) ? searchResult.products : [];
+    const recommendation = getLaptopRecommendation({ products, message });
+    if (!recommendation.noMatch) {
+      return {
+        text: recommendation.summary,
+        products: [recommendation.product],
+        pendingOrder: null,
+        selectedProductId: recommendation.product.id || recommendation.product._id?.toString?.() || null,
+      };
+    }
+    return {
+      text: recommendation.message,
+      products: [],
+      pendingOrder: null,
+    };
   }
 
   const budgetSearch = parseBudgetConstraints(message);
