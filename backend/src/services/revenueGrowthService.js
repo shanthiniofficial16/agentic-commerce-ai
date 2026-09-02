@@ -21,7 +21,13 @@ const categoryMatches = (product = {}, categoryHint = null) => {
   const hint = normalizeText(categoryHint).replace(/s$/, '');
   const productCategory = normalizeText(product.category || '');
   const productSubcategory = normalizeText(product.subcategory || '');
-  return productCategory.includes(hint) || productSubcategory.includes(hint) || productCategory === hint || productSubcategory === hint;
+  const productName = normalizeText(product.name || '');
+  return productCategory.includes(hint)
+    || productSubcategory.includes(hint)
+    || productCategory === hint
+    || productSubcategory === hint
+    || productName.includes(hint)
+    || productName.includes(hint.replace(/s$/, ''));
 };
 
 const parseRamValue = (value) => {

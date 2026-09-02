@@ -9,6 +9,7 @@ const productView = (product) => ({
   name: product.name,
   brand: product.brand,
   category: product.category,
+  subcategory: product.subcategory,
   price: product.price,
   originalPrice: product.originalPrice,
   discountPercentage: product.discountPercentage,
