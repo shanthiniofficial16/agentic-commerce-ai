@@ -360,7 +360,7 @@ export function Checkout({ cart }) {
           </div>
         )}
 
-                  <div className="cross-sell-panel">
+                {step === 3 && (
           <div className="delivery-options">
             <label>
               <input type="radio" defaultChecked name="payment" />
