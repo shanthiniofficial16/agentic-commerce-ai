@@ -132,9 +132,15 @@ const createPendingPayment = async ({ userId, merchantId, pendingOrder, idempote
   if (!pendingOrder?.product?.id) throw Object.assign(new Error('No pending order to pay for'), { code: 'ORDER_NOT_READY', status: 409 });
   const profile = await getProfile(userId);
   if (!profile || validateProfile(profile)) throw Object.assign(new Error('Complete delivery details are required before checkout'), { code: 'PROFILE_REQUIRED', status: 400 });
-  const product = await Product.findOne({ _id: pendingOrder.product.id, merchantId, active: true }).lean();
-  if (!product) throw Object.assign(new Error('Product not found'), { code: 'PRODUCT_NOT_FOUND', status: 404 });
-  const paymentKey = idempotencyKey || `payment:${userId}:${merchantId}:${pendingOrder.product.id}:${pendingOrder.quantity}`;
+  const requestedItems = pendingOrder.items || [{ productId: pendingOrder.product.id, quantity: pendingOrder.quantity || 1 }];
+  const products = [];
+  for (const item of requestedItems) {
+    const product = await Product.findOne({ _id: item.productId, merchantId, active: true }).lean();
+    if (!product) throw Object.assign(new Error('Product not found'), { code: 'PRODUCT_NOT_FOUND', status: 404 });
+    if (product.stock < item.quantity) throw Object.assign(new Error(`${product.name} is not available in the requested quantity`), { code: 'OUT_OF_STOCK', status: 409 });
+    products.push({ product, quantity: item.quantity, source: item.source || 'customer' });
+  }
+  const paymentKey = idempotencyKey || `payment:${userId}:${merchantId}:${pendingOrder.orderPreviewId}`;
   const existing = await Payment.findOne({ idempotencyKey: paymentKey }).lean();
   if (existing && ['PENDING', 'INITIATED', 'PROCESSING'].includes(existing.status)) {
       return {
@@ -148,24 +154,24 @@ const createPendingPayment = async ({ userId, merchantId, pendingOrder, idempote
         keyId: process.env.RAZORPAY_KEY_ID,
       };
   }
-  const amount = Number(product.price) * Number(pendingOrder.quantity || 1);
+  const amount = products.reduce((sum, item) => sum + Number(item.product.price) * Number(item.quantity), 0);
     const payment = existing
       ? await Payment.findOneAndUpdate({ _id: existing._id }, {
-        $set: { userId, merchantId, amount, currency: product.currency || 'INR', status: 'PENDING', verified: false },
+        $set: { userId, merchantId, amount, currency: products[0].product.currency || 'INR', status: 'PENDING', verified: false },
         $unset: { failureReason: '', razorpayOrderId: '', razorpayPaymentId: '', orderId: '' },
       }, { new: true })
       : await Payment.create({
         userId,
         merchantId,
         amount,
-        currency: product.currency || 'INR',
+        currency: products[0].product.currency || 'INR',
         status: 'PENDING',
         verified: false,
         idempotencyKey: paymentKey,
       });
   let provider;
   try {
-    provider = await createRazorpayOrder({ amount, currency: product.currency || 'INR', receipt: paymentKey.slice(0, 40) });
+    provider = await createRazorpayOrder({ amount: Math.round(amount * 100), currency: products[0].product.currency || 'INR', receipt: paymentKey.slice(0, 40) });
   } catch (error) {
     payment.status = 'FAILED';
     payment.failureReason = error.message;

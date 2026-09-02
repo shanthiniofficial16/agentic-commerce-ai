@@ -48,9 +48,9 @@ describe('revenue growth engine', () => {
   ];
 
   const accessories = [
-    { _id: 'acc-1', name: 'Laptop Sleeve', category: 'Accessories', price: 1499, stock: 12, active: true, tags: ['bag', 'laptop', 'travel'] },
-    { _id: 'acc-2', name: 'Wireless Mouse', category: 'Accessories', price: 799, stock: 20, active: true, tags: ['mouse', 'accessory', 'desktop'] },
-    { _id: 'acc-3', name: 'USB-C Hub', category: 'Accessories', price: 2499, stock: 8, active: true, tags: ['hub', 'usb-c', 'laptop'] },
+    { _id: 'acc-1', name: 'Laptop Sleeve', category: 'Accessories', price: 6999, stock: 12, active: true, tags: ['bag', 'laptop', 'travel'] },
+    { _id: 'acc-2', name: 'Wireless Mouse', category: 'Accessories', price: 6999, stock: 20, active: true, tags: ['mouse', 'accessory', 'desktop'] },
+    { _id: 'acc-3', name: 'USB-C Hub', category: 'Accessories', price: 7499, stock: 8, active: true, tags: ['hub', 'usb-c', 'laptop'] },
   ];
 
   test('recommends a premium suitable laptop when no budget is specified', () => {
@@ -109,8 +109,8 @@ describe('revenue growth engine', () => {
     };
 
     const candidates = [
-      { _id: 'acc-1', name: 'Laptop Bag', category: 'Accessories', subcategory: 'Bags', price: 3799, stock: 5, active: true, tags: ['laptop', 'bag', 'travel'] },
-      { _id: 'acc-2', name: 'Wireless Mouse', category: 'Accessories', subcategory: 'Desk', price: 3999, stock: 5, active: true, tags: ['mouse', 'laptop', 'work'] },
+      { _id: 'acc-1', name: 'Laptop Bag', category: 'Accessories', subcategory: 'Bags', price: 4000, stock: 5, active: true, tags: ['laptop', 'bag', 'travel'] },
+      { _id: 'acc-2', name: 'Wireless Mouse', category: 'Accessories', subcategory: 'Desk', price: 4000, stock: 5, active: true, tags: ['mouse', 'laptop', 'work'] },
       { _id: 'acc-3', name: 'USB-C Hub', category: 'Accessories', subcategory: 'Desk', price: 4299, stock: 5, active: true, tags: ['hub', 'laptop', 'connectivity'] },
       { _id: 'acc-4', name: 'Saree', category: 'Fashion', subcategory: 'Sarees', price: 3999, stock: 5, active: true, tags: ['ethnic', 'sale'] },
       { _id: 'acc-5', name: 'Running Shoes', category: 'Fashion', subcategory: 'Shoes', price: 4099, stock: 5, active: true, tags: ['sport', 'running'] },
@@ -148,8 +148,8 @@ describe('revenue growth engine', () => {
       accepted: true,
     });
 
-    expect(result.crossSellRevenue).toBe(1499);
-    expect(result.finalOrderValue).toBe(68999 + 1499);
+    expect(result.crossSellRevenue).toBe(6999);
+    expect(result.finalOrderValue).toBe(68999 + 6999);
   });
 
   test('never recommends an unavailable product', () => {

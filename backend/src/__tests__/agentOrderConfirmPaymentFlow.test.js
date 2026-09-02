@@ -6,12 +6,14 @@ const Conversation = require('../models/Conversation');
 const Product = require('../models/Product');
 const Payment = require('../models/Payment');
 const User = require('../models/User');
+const Cart = require('../models/Cart');
 const RazorpayProvider = require('../services/razorpay.provider');
 
 jest.mock('../models/Conversation');
 jest.mock('../models/Product');
 jest.mock('../models/Payment');
 jest.mock('../models/User');
+jest.mock('../models/Cart');
 jest.mock('../services/razorpay.provider');
 
 const JWT_SECRET = 'test-secret';
@@ -62,6 +64,11 @@ describe('POST /api/agent/order/confirm', () => {
     };
 
     Conversation.findOne.mockResolvedValue(conversation);
+    Cart.findOne.mockReturnValue({
+      lean: jest.fn().mockResolvedValue({
+        items: [{ productId, quantity: 1, source: 'customer' }],
+      }),
+    });
     Product.findOne.mockReturnValue({
       lean: jest.fn().mockResolvedValue({
         _id: productId,

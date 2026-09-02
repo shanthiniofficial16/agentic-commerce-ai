@@ -4,7 +4,7 @@ const AgentAction = require('../models/AgentAction');
 const Merchant = require('../models/Merchant');
 const Product = require('../models/Product');
 const { runAgent, isPurchaseIntent } = require('../services/agent/agentService');
-const { createOrder, createPendingPayment } = require('../services/order.service');
+const { createOrder, createPendingPayment, prepareCartOrder } = require('../services/order.service');
 const { executeTool } = require('../services/agent/tools');
 const { sanitizeErrorPayload } = require('../utils/errorMessageMap');
 
@@ -52,16 +52,20 @@ const createPaymentSessionForConversation = async ({ req, conversation }) => {
     total: conversation.pendingOrder.total || conversation.pendingOrder.product?.price || 0,
   };
 
+  const cartOrder = await prepareCartOrder({
+    userId: req.userId,
+    merchantId: conversation.merchantId,
+  });
   const paymentSession = await createPendingPayment({
     userId: req.userId,
     merchantId: conversation.merchantId,
-    pendingOrder,
+    pendingOrder: cartOrder,
     idempotencyKey: `agent:${conversation.sessionId}:${req.userId}:${conversation.merchantId}`,
   });
 
   conversation.orderState = 'PAYMENT_PENDING';
   conversation.pendingOrder = {
-    ...pendingOrder,
+    ...cartOrder,
     payment: {
       id: paymentSession.paymentId,
       status: paymentSession.status,

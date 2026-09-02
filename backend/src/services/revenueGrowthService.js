@@ -318,7 +318,9 @@ const buildCrossSellRecommendationSet = ({ product, products = [], maxItems = 3 
   const targetPrice = Number(product.price || 0) * 0.10;
 
   const ranked = products
-    .filter((item) => item && isRelevantCrossSellCandidate({ selected: product, candidate: item }))
+    .filter((item) => item
+      && Number(item.price || 0) >= targetPrice
+      && isRelevantCrossSellCandidate({ selected: product, candidate: item }))
     .map((item) => {
       const relevanceScore = getCompatibilityScore({ selected: product, candidate: item });
       const relationshipPriority = getRelationshipPriorityByName({ selectedFamily, candidate: item });

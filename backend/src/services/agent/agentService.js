@@ -388,6 +388,17 @@ const resolveComplementaryProducts = async ({ message, history = [], context }) 
   };
 };
 
+const getCheckoutRecommendations = async ({ pendingOrder, context }) => {
+  const selectedItem = pendingOrder?.items?.[0] || pendingOrder?.product;
+  const productId = selectedItem?.productId || selectedItem?.id;
+  if (!productId) return [];
+
+  const mainProduct = await Product.findOne({ _id: productId, merchantId: context.merchantId, active: true }).lean();
+  if (!mainProduct) return [];
+  const candidates = await Product.find({ merchantId: context.merchantId, active: true, stock: { $gt: 0 } }).limit(100).lean();
+  return buildCrossSellRecommendationSet({ product: mainProduct, products: candidates, maxItems: 3 });
+};
+
 const resolveSpecificProductRequest = async ({ message, history = [], context }) => {
   const lower = message.toLowerCase();
   const previousProduct = getPreviousProductFromContext(history, context);
@@ -703,9 +714,11 @@ const runAgent = async ({ message, history = [], context }) => {
           return { text: `I need your ${friendlyFieldLabel(prepared.requiredFields?.[0])} to complete this order before checkout.`, products: [], pendingOrder: prepared };
         }
         const lines = prepared.items.map((item) => `${item.name}: ₹${Number(item.price).toLocaleString('en-IN')} × ${item.quantity}`);
+        const crossSell = await getCheckoutRecommendations({ pendingOrder: prepared, context });
         return {
           text: `${lines.join('\n')}\nTotal: ₹${Number(prepared.total).toLocaleString('en-IN')}\n\nDo you want to confirm your order? Yes / No`,
           products: [],
+          crossSell,
           pendingOrder: prepared,
           selectedProductId: prepared.items[0].productId,
         };
@@ -720,7 +733,8 @@ const runAgent = async ({ message, history = [], context }) => {
       const productId = purchaseTarget.id || purchaseTarget._id?.toString?.() || purchaseTarget._id;
       if (productId) {
         const product = await executeTool('getProductDetails', { productId }, context);
-        const prepared = await executeTool('prepareOrder', { productId, quantity: 1 }, context);
+        await executeTool('addToCart', { productId, quantity: 1, source: 'customer' }, context);
+        const prepared = await executeTool('prepareCartOrder', {}, context);
         context.pendingOrder = prepared;
 
         if (prepared.state === 'PROFILE_REQUIRED') {
@@ -737,10 +751,12 @@ const runAgent = async ({ message, history = [], context }) => {
         if (isPendingOrder(prepared)) {
           const profile = prepared.profile || {};
           const deliveryLine = [profile.fullName, profile.address || [profile.street, profile.building, profile.landmark].filter(Boolean).join(', '), profile.city && profile.state ? `${profile.city}, ${profile.state}` : profile.city || profile.state, profile.pincode, profile.phone].filter(Boolean).join('\n');
+          const crossSell = await getCheckoutRecommendations({ pendingOrder: prepared, context });
 
           return {
             text: `${product.product.name}\nPrice: ₹${Number(product.product.price).toLocaleString('en-IN')}\nDelivery to: ${deliveryLine}\n\nDo you want to confirm your order? Yes / No`,
             products: [product.product],
+            crossSell,
             pendingOrder: prepared,
             selectedProductId: getProductId(product.product),
           };

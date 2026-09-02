@@ -1,4 +1,4 @@
-export function Assistant({ onAdd, onNotify }) {
+export function Assistant({ onAdd, onNotify, onCartChange }) {
   const navigate = useNavigate()
   const location = useLocation()
   const contextProduct = location.state?.product
@@ -14,6 +14,8 @@ export function Assistant({ onAdd, onNotify }) {
     try {
       setBusy(true)
       const updatedCart = await addToCart(product.id || product._id, 1)
+      onCartChange?.(updatedCart)
+      setOrderPreview((preview) => preview ? { ...preview, items: updatedCart.items, total: updatedCart.total } : preview)
       setCrossSellItems((items) => items.filter((item) => (item.id || item._id) !== (product.id || product._id)))
       setMessages((items) => [...items, { role: 'agent', text: `Added ${product.name} to your cart. Your updated total is ${money(updatedCart?.total || 0)}.` }])
     } catch (error) {
@@ -358,7 +360,7 @@ export function Checkout({ cart }) {
           </div>
         )}
 
-        {step === 3 && (
+                  <div className="cross-sell-panel">
           <div className="delivery-options">
             <label>
               <input type="radio" defaultChecked name="payment" />
