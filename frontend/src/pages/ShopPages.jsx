@@ -34,14 +34,68 @@ export function Assistant({ onAdd, onNotify }) {
       try {
         setMessages((items) => [...items, { role: 'agent', text: 'Proceeding to secure payment.' }]);
         const result = await confirmAgentOrder(sessionId);
-        setOrderPreview(null);
-        const order = result.order
-        if (!result.duplicate && order) onNotify?.(`🎉 Order placed successfully! ${order.productName} · ₹${Number(order.total).toLocaleString('en-IN')} · Expected delivery: ${new Date(order.estimatedDeliveryDate).toLocaleDateString('en-US', { dateStyle: 'long' })}`)
-        setMessages((items) => [...items, { role: 'agent', text: result.message || `Payment successful. Your order has been confirmed.\nOrder ID: ${order?.id || 'created'}` }]);
+        const paymentSession = result?.paymentSession || null;
+        if (!paymentSession?.razorpayOrderId || !paymentSession?.keyId) {
+          throw new Error('No secure payment session was created for this order.')
+        }
+
+        await loadRazorpayScript()
+
+        const razorpayInstance = new window.Razorpay({
+          key: paymentSession.keyId,
+          amount: paymentSession.amount,
+          currency: paymentSession.currency || 'INR',
+          order_id: paymentSession.razorpayOrderId,
+          name: 'AI Commerce',
+          description: 'Secure order payment',
+          handler: async (razorpayResponse) => {
+            try {
+              const verification = await verifyRazorpayPayment({
+                sessionId,
+                internalOrderId: paymentSession.internalOrderId || paymentSession.paymentId || undefined,
+                razorpay_order_id: razorpayResponse.razorpay_order_id,
+                razorpay_payment_id: razorpayResponse.razorpay_payment_id,
+                razorpay_signature: razorpayResponse.razorpay_signature,
+              })
+
+              if (verification?.success) {
+                setOrderPreview(null)
+                setMessages((items) => [...items, { role: 'agent', text: `Payment successful. Your order has been confirmed.\nOrder ID: ${verification?.data?.order?.id || 'created'}` }]);
+                if (verification?.data?.order) {
+                  onNotify?.(`🎉 Order placed successfully! ${verification.data.order.productName || 'Order'} · ₹${Number(verification.data.order.total || 0).toLocaleString('en-IN')} · Expected delivery: ${new Date(verification.data.order.estimatedDeliveryDate || Date.now()).toLocaleDateString('en-US', { dateStyle: 'long' })}`)
+                }
+              } else {
+                setMessages((items) => [...items, { role: 'agent', text: verification?.error?.message || 'Payment verification failed. Your order remains pending.' }]);
+              }
+            } catch (error) {
+              setMessages((items) => [...items, { role: 'agent', text: error.response?.data?.error?.message || 'Payment verification failed. Please try again.' }]);
+            } finally {
+              setBusy(false)
+            }
+          },
+          prefill: {
+            name: orderPreview?.profile?.fullName || '',
+            email: orderPreview?.profile?.email || '',
+            contact: orderPreview?.profile?.phone || '',
+          },
+          theme: { color: '#0f766e' },
+          modal: {
+            ondismiss: () => {
+              setMessages((items) => [...items, { role: 'agent', text: 'Payment was cancelled. Your order remains unpaid.' }]);
+              setBusy(false)
+            },
+          },
+        })
+
+        razorpayInstance.on('payment.failed', (failure) => {
+          setMessages((items) => [...items, { role: 'agent', text: failure?.error?.description || 'Payment failed. Please try again.' }]);
+          setBusy(false)
+        })
+
+        razorpayInstance.open()
       } catch (error) {
-        setMessages((items) => [...items, { role: 'agent', text: error.response?.data?.error?.message || 'I could not place that order.' }]);
-      } finally {
-        setBusy(false);
+        setMessages((items) => [...items, { role: 'agent', text: error.response?.data?.error?.message || error.message || 'I could not place that order.' }]);
+        setBusy(false)
       }
     }
     const cancelOrder = async () => { await cancelAgentOrder(sessionId); setOrderPreview(null); setMessages((items) => [...items, { role: 'agent', text: 'The order preview has been cancelled.' }]) }

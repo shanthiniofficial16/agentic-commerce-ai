@@ -4,7 +4,7 @@ const AgentAction = require('../models/AgentAction');
 const Merchant = require('../models/Merchant');
 const Product = require('../models/Product');
 const { runAgent, isPurchaseIntent } = require('../services/agent/agentService');
-const { createOrder } = require('../services/order.service');
+const { createOrder, createPendingPayment } = require('../services/order.service');
 const { executeTool } = require('../services/agent/tools');
 const { sanitizeErrorPayload } = require('../utils/errorMessageMap');
 
@@ -226,11 +226,52 @@ const confirmOrder = async (req, res) => {
     if (!conversation) return res.status(404).json({ success: false, error: { code: 'SESSION_NOT_FOUND', message: 'Order session not found' } });
     if (conversation.orderState === 'ORDER_CREATED' && conversation.pendingOrder?.createdOrder) return res.json({ success: true, data: { order: conversation.pendingOrder.createdOrder, duplicate: true } });
     if (!isPendingConfirmationState(conversation.orderState) || !conversation.pendingOrder) return res.status(409).json({ success: false, error: { code: 'ORDER_NOT_READY', message: 'No order preview is awaiting approval' } });
-    return res.status(409).json({
-      success: false,
-      error: {
-        code: 'PAYMENT_VERIFICATION_REQUIRED',
-        message: 'Proceeding to secure payment. Complete the Razorpay checkout flow to confirm and pay for this order.',
+
+    const pendingOrder = {
+      ...conversation.pendingOrder,
+      state: conversation.pendingOrder.state || 'PENDING_CONFIRMATION',
+      product: conversation.pendingOrder.product || {
+        id: conversation.pendingOrder.productId,
+        name: conversation.pendingOrder.productName,
+        price: conversation.pendingOrder.total,
+        currency: conversation.pendingOrder.currency || 'INR',
+      },
+      quantity: conversation.pendingOrder.quantity || 1,
+      total: conversation.pendingOrder.total || conversation.pendingOrder.product?.price || 0,
+    };
+
+    const paymentSession = await createPendingPayment({
+      userId: req.userId,
+      merchantId: conversation.merchantId,
+      pendingOrder,
+      idempotencyKey: `agent:${conversation.sessionId}:${req.userId}:${conversation.merchantId}`,
+    });
+
+    conversation.orderState = 'PAYMENT_PENDING';
+    conversation.pendingOrder = {
+      ...pendingOrder,
+      payment: {
+        id: paymentSession.paymentId,
+        status: paymentSession.status,
+        verified: Boolean(paymentSession.verified),
+        razorpayOrderId: paymentSession.razorpayOrderId,
+        keyId: paymentSession.keyId,
+      },
+    };
+    await conversation.save();
+
+    return res.json({
+      success: true,
+      data: {
+        paymentSession: {
+          internalOrderId: paymentSession.paymentId,
+          paymentId: paymentSession.paymentId,
+          razorpayOrderId: paymentSession.razorpayOrderId,
+          amount: paymentSession.checkoutAmount || paymentSession.amount * 100,
+          currency: paymentSession.currency,
+          keyId: paymentSession.keyId,
+          sessionId: conversation.sessionId,
+        },
       },
     });
   } catch (error) {
