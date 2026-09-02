@@ -197,7 +197,6 @@ const createPendingPayment = async ({ userId, merchantId, pendingOrder, idempote
 const verifyAndFinalizePayment = async ({ userId, merchantId, pendingOrder, razorpayOrderId, razorpayPaymentId, razorpaySignature, idempotencyKey }) => {
   const { verifySignature, fetchPayment } = require('./razorpay.provider');
   if (!pendingOrder?.product?.id || !razorpayOrderId || !razorpayPaymentId || !razorpaySignature) throw Object.assign(new Error('Incomplete payment verification details'), { code: 'PAYMENT_VERIFICATION_INVALID', status: 400 });
-  if (!verifySignature({ orderId: razorpayOrderId, paymentId: razorpayPaymentId, signature: razorpaySignature })) throw Object.assign(new Error('Payment signature verification failed'), { code: 'PAYMENT_VERIFICATION_FAILED', status: 400 });
   const paymentRecord = await Payment.findOne({ userId, merchantId, razorpayOrderId, idempotencyKey });
   if (!paymentRecord) {
     const verifiedPayment = await Payment.findOne({ userId, merchantId, razorpayPaymentId, status: 'VERIFIED_SUCCESS' }).lean();
@@ -208,6 +207,7 @@ const verifyAndFinalizePayment = async ({ userId, merchantId, pendingOrder, razo
   }
   if (!paymentRecord) throw Object.assign(new Error('Payment transaction not found'), { code: 'PAYMENT_NOT_FOUND', status: 404 });
   if (paymentRecord.razorpayOrderId !== razorpayOrderId) throw Object.assign(new Error('Payment order does not match the checkout session'), { code: 'PAYMENT_VERIFICATION_FAILED', status: 400 });
+  if (!verifySignature({ orderId: paymentRecord.razorpayOrderId, paymentId: razorpayPaymentId, signature: razorpaySignature })) throw Object.assign(new Error('Payment signature verification failed'), { code: 'PAYMENT_VERIFICATION_FAILED', status: 400 });
   if (paymentRecord.status === 'VERIFIED_SUCCESS' && paymentRecord.orderId) {
     const existingOrder = await Order.findById(paymentRecord.orderId).lean();
     if (existingOrder) return { payment: paymentRecord.toObject(), order: { ...existingOrder, id: existingOrder._id.toString() }, duplicate: true };
@@ -226,12 +226,26 @@ const verifyAndFinalizePayment = async ({ userId, merchantId, pendingOrder, razo
   if (paymentRecord.orderId) {
     const existingOrder = await Order.findOne({ _id: paymentRecord.orderId, userId, merchantId });
     if (existingOrder && existingOrder.paymentStatus === 'PENDING') {
+      for (const item of existingOrder.items || []) {
+        const reserved = await Product.findOneAndUpdate(
+          { _id: item.productId, merchantId, active: true, stock: { $gte: item.quantity } },
+          { $inc: { stock: -item.quantity } },
+          { new: true },
+        ).lean();
+        if (!reserved) {
+          throw Object.assign(new Error('A product is no longer available in the requested quantity'), { code: 'OUT_OF_STOCK', status: 409 });
+        }
+      }
       existingOrder.paymentStatus = 'PAID';
       existingOrder.status = 'PAID';
       existingOrder.crossSellRevenue = existingOrder.items
         .filter((item) => item.source === 'ai_cross_sell')
         .reduce((sum, item) => sum + Number(item.price || 0) * Number(item.quantity || 0), 0);
       await existingOrder.save();
+      await Cart.updateOne(
+        { userId, merchantId, status: 'ACTIVE' },
+        { $set: { items: [], subtotal: 0, total: 0, status: 'CHECKED_OUT' } },
+      );
       await Payment.updateOne({ _id: paymentRecord._id }, { $set: { orderId: existingOrder._id } });
       return { payment: paymentRecord.toObject(), order: { id: existingOrder._id.toString(), productName: existingOrder.items[0]?.productName, quantity: existingOrder.items.reduce((sum, item) => sum + item.quantity, 0), total: existingOrder.total, currency: existingOrder.currency, status: existingOrder.status, paymentStatus: existingOrder.paymentStatus, estimatedDeliveryDate: existingOrder.estimatedDeliveryDate, delivery: existingOrder.delivery, items: existingOrder.items, duplicate: false } };
     }

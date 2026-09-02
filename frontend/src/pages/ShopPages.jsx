@@ -379,18 +379,21 @@ export function Checkout({ cart }) {
           </div>
         )}
 
-        {error && <div className="notice error-state" style={{ marginTop: '18px' }}>{error}</div>}
-
         <div className="checkout-summary">
           {(cart?.items || []).map((item) => {
             const product = item.productId || {}
-            const name = product.name || item.productName || 'Product'
-            return <div className="line" key={product._id || item._id}><span>{name} × {item.quantity}</span><strong>{money(Number(item.price || product.price || 0) * Number(item.quantity || 0))}</strong></div>
+            const productId = product._id || item.productId || item._id
+            const price = Number(item.price || product.price || 0)
+            return <div className="line" key={productId}><span>{product.name || item.productName || 'Product'} × {item.quantity}</span><strong>{money(price * Number(item.quantity || 0))}</strong></div>
           })}
           <div className="line"><span>Subtotal</span><strong>{money(cart?.subtotal || cart?.total || 0)}</strong></div>
           <div className="line"><span>Shipping</span><strong>Free</strong></div>
           <div className="line total"><span>Total</span><strong>{money(cart?.total || 0)}</strong></div>
+        </div>
 
+        {error && <div className="notice error-state" style={{ marginTop: '18px' }}>{error}</div>}
+
+        <div className="checkout-summary">
           {step < 3 ? (
             <button className="button primary" onClick={() => setStep(step + 1)}>Continue</button>
           ) : (
