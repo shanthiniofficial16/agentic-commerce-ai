@@ -198,9 +198,19 @@ const isComplementaryRequest = (message) => {
 };
 
 const stripComplementaryClauses = (message) => {
-  let cleaned = message;
-  cleaned = cleaned.replace(/\b(?:and)\b\s*(?:.*?\b(?:recommend|suggest|matching|match|complement|accessory|accessories|jewellery|jewelry|mouse|bag|headphone|headphones|bracelet|bracelets|ring|rings|earring|earrings)\b.*$)/i, '');
-  cleaned = cleaned.replace(/\b(?:recommend|suggest|matching|match|complement|accessory|accessories|jewellery|jewelry|mouse|bag|headphone|headphones|bracelet|bracelets|ring|rings|earring|earrings|what accessories do i need|some accessories)\b.*$/gi, '');
+  if (!message || !String(message).trim()) return '';
+
+  let cleaned = String(message).trim();
+  cleaned = cleaned.replace(/^\s*(?:please\s+)?(?:suggest|recommend|show|find|match|matching|complement|complementary|accessory|accessories)\s+/i, '');
+  cleaned = cleaned.replace(/^\s*(?:a|an|some|the)\s+/i, '');
+
+  const targetMatch = cleaned.match(/\b(?:for|with|to go with)\s+(.+)$/i);
+  if (targetMatch) {
+    cleaned = targetMatch[1].trim();
+  } else {
+    cleaned = cleaned.replace(/\b(?:recommend|suggest|matching|match|complement|accessory|accessories|jewellery|jewelry|mouse|bag|headphone|headphones|bracelet|bracelets|ring|rings|earring|earrings)\b.*$/gi, '').trim();
+  }
+
   return cleaned.replace(/\s+/g, ' ').trim();
 };
 
@@ -939,6 +949,7 @@ module.exports = {
   formatBudgetText,
   isPurchaseIntent,
   isOrderRequest,
+  stripComplementaryClauses,
   findUpsellAlternative,
   findAndRecommendUpsell,
 };
