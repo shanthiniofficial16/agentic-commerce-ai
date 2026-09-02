@@ -2,6 +2,7 @@ const {
   rankProducts,
   getLaptopRecommendation,
   getCrossSellRecommendations,
+  buildCrossSellRecommendationSet,
   calculateAdditionalRevenue,
   trackRevenueAttribution,
 } = require('../services/revenueGrowthService');
@@ -154,6 +155,19 @@ describe('revenue growth engine', () => {
     expect(result.crossSellRevenue).toBe(2298);
     expect(result.totalAdditionalRevenue).toBe(12298);
     expect(result.finalOrderValue).toBe(54999 + 10000 + 2298);
+  });
+
+  test('builds a catalog-backed cross-sell recommendation bundle for the chosen laptop', () => {
+    const accessoryBundle = buildCrossSellRecommendationSet({
+      product: laptops[1],
+      products: accessories,
+      maxItems: 3,
+    });
+
+    expect(Array.isArray(accessoryBundle)).toBe(true);
+    expect(accessoryBundle).toHaveLength(3);
+    expect(accessoryBundle.every((item) => item.available === true)).toBe(true);
+    expect(accessoryBundle[0].benefit).toMatch(/carry|protect|mouse|connect|organize|everyday/i);
   });
 
   test('supports the real Razorpay payment flow contract without altering payment semantics', () => {

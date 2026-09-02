@@ -1,6 +1,6 @@
 const Product = require('../../models/Product');
 const { generateCompletion } = require('../openrouter.provider');
-const { getLaptopRecommendation, getCrossSellRecommendations } = require('../revenueGrowthService');
+const { getLaptopRecommendation, getCrossSellRecommendations, buildCrossSellRecommendationSet } = require('../revenueGrowthService');
 const { SYSTEM_PROMPT } = require('./prompts');
 const { tools, executeTool } = require('./tools');
 
@@ -564,9 +564,12 @@ const resolveCombinedShoppingIntent = async ({ message, history = [], context })
     ? `${primaryText}\n\n${complementary.text}`
     : primaryText;
 
+  const crossSell = mainProduct && Array.isArray(products) ? buildCrossSellRecommendationSet({ product: mainProduct, products: products.slice(0, 5), maxItems: 3 }) : [];
+
   return {
     text,
     products: [...products.slice(0, 5), ...(complementary?.products || [])],
+    crossSell,
     pendingOrder: complementary?.pendingOrder || null,
     pendingRecommendation: complementary?.pendingRecommendation || null,
     selectedProductId: getProductId(mainProduct),
@@ -596,9 +599,15 @@ const runAgent = async ({ message, history = [], context }) => {
     const products = Array.isArray(searchResult?.products) ? searchResult.products : [];
     const recommendation = getLaptopRecommendation({ products, message });
     if (!recommendation.noMatch) {
+      const crossSell = buildCrossSellRecommendationSet({
+        product: recommendation.product,
+        products: (await Product.find({ active: true, stock: { $gt: 0 }, category: 'Accessories' }).limit(20).lean()) || [],
+        maxItems: 3,
+      });
       return {
         text: recommendation.summary,
         products: [recommendation.product],
+        crossSell,
         pendingOrder: null,
         selectedProductId: recommendation.product.id || recommendation.product._id?.toString?.() || null,
       };

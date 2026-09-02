@@ -136,29 +136,73 @@ const getLaptopRecommendation = ({ products = [], message = '' }) => {
   };
 };
 
-const getCrossSellRecommendations = ({ product, products = [] }) => {
+const buildCrossSellRecommendationSet = ({ product, products = [], maxItems = 3 }) => {
   if (!product || !Array.isArray(products) || !products.length) return [];
 
   const targetText = `${product.name || ''} ${product.category || ''} ${product.subcategory || ''} ${(product.tags || []).join(' ')}`.toLowerCase();
-  const normalized = (value = '') => String(value).toLowerCase();
+  const accessoryRules = [
+    { match: /laptop.*(bag|sleeve|travel|case)/i, reason: 'Protects and carries your laptop comfortably.', benefit: 'Carry and protect your laptop with ease.' },
+    { match: /laptop.*(mouse|keyboard|hub)/i, reason: 'Adds a more comfortable workstation setup.', benefit: 'Improves comfort and productivity while you work.' },
+    { match: /laptop.*(stand|cooling|pad)/i, reason: 'Improves airflow and comfort during longer sessions.', benefit: 'Keeps your setup comfortable and efficient.' },
+    { match: /mouse/i, reason: 'Helpful for everyday productivity and smooth navigation.', benefit: 'A more comfortable everyday mouse for daily work.' },
+    { match: /bag|sleeve/i, reason: 'Keeps your laptop safe while you travel or commute.', benefit: 'Protects and carries your laptop safely.' },
+    { match: /hub|keyboard/i, reason: 'Expands connectivity and makes work easier.', benefit: 'Connects more devices without clutter.' },
+  ];
 
   const scored = products
     .filter((item) => item && item.active !== false && Number(item.stock || 0) > 0)
     .map((item) => {
-      const haystack = `${item.name || ''} ${item.category || ''} ${(item.tags || []).join(' ')}`.toLowerCase();
+      const haystack = `${item.name || ''} ${item.category || ''} ${item.subcategory || ''} ${(item.tags || []).join(' ')}`.toLowerCase();
       let score = 0;
       if (item.category === 'Accessories') score += 30;
       if (haystack.includes('laptop') && targetText.includes('laptop')) score += 25;
       if (haystack.includes('mouse') || haystack.includes('bag') || haystack.includes('hub') || haystack.includes('keyboard')) score += 25;
-      if (targetText.includes('laptop') && (haystack.includes('bag') || haystack.includes('mouse') || haystack.includes('hub') || haystack.includes('keyboard'))) score += 30;
-      return { item, score };
+      if (targetText.includes('laptop') && (haystack.includes('bag') || haystack.includes('mouse') || haystack.includes('hub') || haystack.includes('keyboard'))) score += 35;
+
+      const match = accessoryRules.find((rule) => rule.match.test(haystack) || rule.match.test(targetText));
+      const reason = match ? match.reason : 'Pairs well with your laptop and supports everyday use.';
+      const benefit = match ? match.benefit : 'Useful for day-to-day setup and portability.';
+
+      return { item, score, reason, benefit, available: true };
     })
     .filter(({ score }) => score > 0)
     .sort((a, b) => b.score - a.score)
-    .map(({ item }) => item)
-    .slice(0, 3);
+    .slice(0, Number(maxItems) || 3)
+    .map(({ item, reason, benefit }) => ({
+      id: item._id ? item._id.toString() : item.id,
+      name: item.name,
+      price: Number(item.price || 0),
+      stock: Number(item.stock || 0),
+      category: item.category,
+      brand: item.brand,
+      subcategory: item.subcategory,
+      description: item.shortDescription || item.description || 'Useful add-on for everyday setup.',
+      image: item.images?.[0] || null,
+      reason,
+      benefit,
+      available: Number(item.stock || 0) > 0,
+    }));
 
-  return scored.filter((item) => item && item.name);
+  return scored.filter((item) => item && item.name && item.available);
+};
+
+const getCrossSellRecommendations = ({ product, products = [] }) => {
+  return buildCrossSellRecommendationSet({ product, products, maxItems: 3 }).map((item) => ({
+    _id: item.id,
+    id: item.id,
+    name: item.name,
+    price: item.price,
+    stock: item.stock,
+    category: item.category,
+    brand: item.brand,
+    subcategory: item.subcategory,
+    description: item.description,
+    images: item.image ? [item.image] : [],
+    tags: [item.category.toLowerCase()],
+    active: true,
+    benefit: item.benefit,
+    reason: item.reason,
+  }));
 };
 
 const calculateAdditionalRevenue = ({ originalProductPrice = 0, upsellRevenue = 0, crossSellRevenue = 0 }) => {
@@ -216,6 +260,7 @@ module.exports = {
   getRealSpecs,
   rankProducts,
   buildLaptopSummary,
+  buildCrossSellRecommendationSet,
   getLaptopRecommendation,
   getCrossSellRecommendations,
   getUpsellRecommendation,

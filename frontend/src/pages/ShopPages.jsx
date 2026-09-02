@@ -6,7 +6,22 @@ export function Assistant({ onAdd, onNotify }) {
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
   const [sessionId, setSessionId] = useState('')
-    const [orderPreview, setOrderPreview] = useState(null)
+  const [orderPreview, setOrderPreview] = useState(null)
+  const [crossSellItems, setCrossSellItems] = useState([])
+  const [crossSellMessage, setCrossSellMessage] = useState('')
+
+  const handleCrossSellAdd = async (product) => {
+    try {
+      setBusy(true)
+      const updatedCart = await addToCart(product.id || product._id, 1)
+      setCrossSellItems((items) => items.filter((item) => (item.id || item._id) !== (product.id || product._id)))
+      setMessages((items) => [...items, { role: 'agent', text: `Added ${product.name} to your cart. Your updated total is ${money(updatedCart?.total || 0)}.` }])
+    } catch (error) {
+      setMessages((items) => [...items, { role: 'agent', text: error.response?.data?.error?.message || `I couldn’t add ${product.name} to the cart right now.` }])
+    } finally {
+      setBusy(false)
+    }
+  }
   const send = async (event) => {
     event.preventDefault()
     if (!input.trim() || busy) return
@@ -19,6 +34,9 @@ export function Assistant({ onAdd, onNotify }) {
       const nextSessionId = result?.sessionId || sessionId || undefined
       if (nextSessionId) setSessionId(nextSessionId)
       setOrderPreview(result?.orderPreview || null)
+      const nextCrossSell = Array.isArray(result?.crossSell) ? result.crossSell : []
+      setCrossSellItems(nextCrossSell)
+      setCrossSellMessage(nextCrossSell.length ? 'COMPLETE YOUR SETUP' : '')
       setMessages((items) => [...items, {
         role: 'agent',
         text: typeof result?.message === 'string' && result.message.trim() ? result.message : 'I could not generate a response for that request.',
@@ -99,7 +117,7 @@ export function Assistant({ onAdd, onNotify }) {
       }
     }
     const cancelOrder = async () => { await cancelAgentOrder(sessionId); setOrderPreview(null); setMessages((items) => [...items, { role: 'agent', text: 'The order preview has been cancelled.' }]) }
-    return <section className="agent-page"><div className="agent-header"><button className="back-link agent-back" onClick={() => navigate(-1)}><ArrowRight size={16} /> Back to Store</button><div><p className="eyebrow"><Bot size={14} /> AI shopping assistant</p><h1>Find your next favourite.</h1></div><span className="agent-status"><i /> Online / Ready</span></div><div className="agent-layout"><div className="agent-intro"><span className="assistant-avatar"><Bot size={28} /></span><p className="eyebrow">Personal shopping intelligence</p><h2>Ask. Discover.<br /><em>Buy better.</em></h2><p className="muted">Search the live catalogue, compare products, check stock, or manage your cart.</p>{contextProduct && <div className="agent-context"><small>Currently viewing</small><strong>{contextProduct.name}</strong><span>{money(contextProduct.price)}</span></div>}</div><div className="chat-window agent-chat"><div className="chat-messages">{messages.map((message, index) => <div className={`message ${message.role}`} key={`${index}-${message.text}`}><span>{message.role === 'agent' ? <Bot size={15} /> : 'You'}</span><p>{message.text}</p>{message.products?.length > 0 && <div className="chat-products">{message.products.map((product) => <article className="chat-product" key={product.id}><img src={imageFor(product)} alt={product.name} /><div><Link to={`/shop/products/${product.id}`}><strong>{product.name}</strong></Link><p>{money(product.price)}</p><button className="add-button" onClick={() => onAdd({ ...product, _id: product.id })}>Add to cart</button></div></article>)}</div>}</div>)}{orderPreview && <div className="order-preview"><strong>Order Summary</strong><span>{orderPreview.product.name} × {orderPreview.quantity}</span><span>Delivery: {orderPreview.profile.fullName}</span><span>{orderPreview.profile.address}, {orderPreview.profile.city}</span><b>Total: {money(orderPreview.total)}</b><button className="button primary" onClick={placeOrder} disabled={busy}>Place Order</button><button className="button outline" onClick={cancelOrder} disabled={busy}>Cancel</button></div>}{busy && <div className="message agent typing"><span><Bot size={15} /></span><p>Thinking<span className="typing-dots">...</span></p></div>}</div><div className="suggestions">{['Find a laptop under ₹70,000', 'Show me the best headphones', 'What can you help me with?'].map((suggestion) => <button key={suggestion} onClick={() => setInput(suggestion)}>{suggestion}</button>)}</div><form className="chat-form" onSubmit={send}><input value={input} onChange={(event) => setInput(event.target.value)} placeholder="Ask anything about products..." disabled={busy} /><button className="button primary" aria-label="Send" disabled={busy}><ArrowRight size={18} /></button></form></div></div></section>
+    return <section className="agent-page"><div className="agent-header"><button className="back-link agent-back" onClick={() => navigate(-1)}><ArrowRight size={16} /> Back to Store</button><div><p className="eyebrow"><Bot size={14} /> AI shopping assistant</p><h1>Find your next favourite.</h1></div><span className="agent-status"><i /> Online / Ready</span></div><div className="agent-layout"><div className="agent-intro"><span className="assistant-avatar"><Bot size={28} /></span><p className="eyebrow">Personal shopping intelligence</p><h2>Ask. Discover.<br /><em>Buy better.</em></h2><p className="muted">Search the live catalogue, compare products, check stock, or manage your cart.</p>{contextProduct && <div className="agent-context"><small>Currently viewing</small><strong>{contextProduct.name}</strong><span>{money(contextProduct.price)}</span></div>}</div><div className="chat-window agent-chat"><div className="chat-messages">{messages.map((message, index) => <div className={`message ${message.role}`} key={`${index}-${message.text}`}><span>{message.role === 'agent' ? <Bot size={15} /> : 'You'}</span><p>{message.text}</p>{message.products?.length > 0 && <div className="chat-products">{message.products.map((product) => <article className="chat-product" key={product.id}><img src={imageFor(product)} alt={product.name} /><div><Link to={`/shop/products/${product.id}`}><strong>{product.name}</strong></Link><p>{money(product.price)}</p><button className="add-button" onClick={() => onAdd({ ...product, _id: product.id })}>Add to cart</button></div></article>)}</div>}</div>)}{crossSellItems.length > 0 && <div className="cross-sell-panel"><div className="cross-sell-header">{crossSellMessage || 'Recommended for your laptop'}</div><div className="cross-sell-grid">{crossSellItems.map((item) => <article className="cross-sell-card" key={item.id || item._id}><img src={imageFor(item)} alt={item.name} /><div className="cross-sell-card-body"><h4>{item.name}</h4><p className="cross-sell-price">{money(item.price)}</p><p className="cross-sell-benefit">{item.benefit || item.reason || 'Useful for everyday productivity.'}</p><button className="add-button" onClick={() => handleCrossSellAdd(item)} disabled={busy}>Add to cart</button></div></article>)}</div></div>}{orderPreview && <div className="order-preview"><strong>Order Summary</strong><span>{orderPreview.product.name} × {orderPreview.quantity}</span><span>Delivery: {orderPreview.profile.fullName}</span><span>{orderPreview.profile.address}, {orderPreview.profile.city}</span><b>Total: {money(orderPreview.total)}</b><button className="button primary" onClick={placeOrder} disabled={busy}>Place Order</button><button className="button outline" onClick={cancelOrder} disabled={busy}>Cancel</button></div>}{busy && <div className="message agent typing"><span><Bot size={15} /></span><p>Thinking<span className="typing-dots">...</span></p></div>}</div><div className="suggestions">{['Find a laptop under ₹70,000', 'Show me the best headphones', 'What can you help me with?'].map((suggestion) => <button key={suggestion} onClick={() => setInput(suggestion)}>{suggestion}</button>)}</div><form className="chat-form" onSubmit={send}><input value={input} onChange={(event) => setInput(event.target.value)} placeholder="Ask anything about products..." disabled={busy} /><button className="button primary" aria-label="Send" disabled={busy}><ArrowRight size={18} /></button></form></div></div></section>
 }
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
