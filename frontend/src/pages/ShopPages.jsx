@@ -39,7 +39,7 @@ export function Assistant({ onAdd, onNotify, onCartChange }) {
       const isCheckoutStage = Boolean(result?.orderPreview || result?.pendingConfirmation)
       setOrderPreview(result?.orderPreview || null)
       const nextCrossSell = Array.isArray(result?.crossSell) ? result.crossSell : []
-      setCrossSellItems(isCheckoutStage ? nextCrossSell : [])
+      setCrossSellItems(isCheckoutStage ? nextCrossSell.slice(0, 1) : [])
       setCrossSellMessage(isCheckoutStage && nextCrossSell.length ? 'COMPLETE YOUR SETUP' : '')
       setMessages((items) => [...items, {
         role: 'agent',
