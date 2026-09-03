@@ -23,6 +23,11 @@ export async function getProduct(id) {
   return response.data.data.product
 }
 
+export async function createProduct(product) {
+  const response = await api.post('/api/products', product)
+  return response.data.data.product
+}
+
 export async function getCart() {
   const response = await api.get('/api/cart')
   return response.data.data.cart

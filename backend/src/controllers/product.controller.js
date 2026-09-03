@@ -128,9 +128,9 @@ const createProduct = async (req, res) => {
       });
     }
 
-    // Verify merchant authorization
-    const merchant = await Merchant.findById(req.body.merchantId);
-    if (!merchant || merchant.userId.toString() !== req.userId) {
+    // Resolve the merchant from the authenticated account instead of trusting client input.
+    const merchant = await Merchant.findOne({ userId: req.userId, isActive: true });
+    if (!merchant) {
       return res.status(403).json({
         success: false,
         error: { code: 'FORBIDDEN', message: 'Not authorized' },
@@ -139,7 +139,7 @@ const createProduct = async (req, res) => {
 
     const product = new Product({
       ...value,
-      merchantId: req.body.merchantId,
+      merchantId: merchant._id,
     });
 
     await product.save();
