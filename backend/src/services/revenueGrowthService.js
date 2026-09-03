@@ -15,6 +15,7 @@ const getRealSpecs = (product = {}) => {
 };
 
 const normalizeText = (value = '') => String(value).toLowerCase().trim();
+const isExcludedRecommendation = (product = {}) => normalizeText(product.name) === 'pixeldesk air laptop';
 
 const categoryMatches = (product = {}, categoryHint = null) => {
   if (!categoryHint) return true;
@@ -62,6 +63,7 @@ const rankProducts = ({ products = [], userMessage = '', categoryHint = null }) 
 
   const validProducts = (products || []).filter((product) => {
     if (!product || product.active === false) return false;
+    if (isExcludedRecommendation(product)) return false;
     if (Number(product.stock || 0) <= 0) return false;
     if (category && !categoryMatches(product, category)) return false;
     return true;

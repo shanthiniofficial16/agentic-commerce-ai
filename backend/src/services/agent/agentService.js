@@ -104,6 +104,10 @@ const shouldGenerateCheckoutRecommendations = ({ message = '', context = {} }) =
     return true;
   }
 
+  if (isComplementaryRequest(String(message)) && (context.currentProduct || /\b(buy|buying|bought|considering|this product|this laptop|this phone)\b/i.test(String(message)))) {
+    return true;
+  }
+
   return explicitCheckoutPhrase.test(String(message));
 };
 const isOrderHistoryRequest = (message) => /\b(my orders|recent orders|what did i order|has my order been placed|where is my order|order status|when will i receive|when will .* arrive|expected delivery|delivery date)\b/i.test(message);
@@ -368,7 +372,7 @@ const resolveComplementaryProducts = async ({ message, history = [], context }) 
     };
   }
 
-  const selected = scored.map((entry) => entry.product).filter((product) => product && product.name).slice(0, 3);
+  const selected = scored.map((entry) => entry.product).filter((product) => product && product.name).slice(0, 1);
   const lines = selected.map((product) => `• ${product.name} — ₹${Number(product.price).toLocaleString('en-IN')} — ${Number(product.stock) > 0 ? `Available (${product.stock} in stock)` : 'Currently unavailable'}`);
 
   return {
@@ -396,7 +400,7 @@ const getCheckoutRecommendations = async ({ pendingOrder, context }) => {
   const mainProduct = await Product.findOne({ _id: productId, merchantId: context.merchantId, active: true }).lean();
   if (!mainProduct) return [];
   const candidates = await Product.find({ merchantId: context.merchantId, active: true, stock: { $gt: 0 } }).limit(100).lean();
-  return buildCrossSellRecommendationSet({ product: mainProduct, products: candidates, maxItems: 3 });
+  return buildCrossSellRecommendationSet({ product: mainProduct, products: candidates, maxItems: 1 });
 };
 
 const resolveSpecificProductRequest = async ({ message, history = [], context }) => {
@@ -598,7 +602,7 @@ const resolveCombinedShoppingIntent = async ({ message, history = [], context })
     : primaryText;
 
   const crossSell = shouldGenerateCheckoutRecommendations({ message, context }) && mainProduct && Array.isArray(products)
-    ? buildCrossSellRecommendationSet({ product: mainProduct, products: products.slice(0, 5), maxItems: 3 })
+    ? buildCrossSellRecommendationSet({ product: mainProduct, products: products.slice(0, 5), maxItems: 1 })
     : [];
 
   return {
@@ -656,7 +660,7 @@ const runAgent = async ({ message, history = [], context }) => {
       const crossSell = buildCrossSellRecommendationSet({
         product: recommendation.product,
         products: (await Product.find({ active: true, stock: { $gt: 0 }, category: 'Accessories' }).limit(20).lean()) || [],
-        maxItems: 3,
+        maxItems: 1,
       });
       return {
         text: recommendation.summary,
