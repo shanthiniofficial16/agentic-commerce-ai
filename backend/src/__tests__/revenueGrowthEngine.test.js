@@ -119,23 +119,23 @@ describe('revenue growth engine', () => {
     const result = getCrossSellRecommendations({ product, products: candidates });
 
     expect(result.selectedProductId).toBe('lap-target');
-    expect(result.targetPrice).toBe(4000);
+    expect(result.maximumPrice).toBe(6000);
     expect(result.recommendations.map((item) => item.name)).toEqual(['Laptop Bag', 'Wireless Mouse', 'USB-C Hub']);
     expect(result.recommendations.some((item) => item.name === 'Saree')).toBe(false);
     expect(result.recommendations.some((item) => item.name === 'Running Shoes')).toBe(false);
   });
 
-  test('rejects relevant accessories below the dynamic 10% minimum price', () => {
+  test('rejects relevant accessories above the dynamic 15% maximum price', () => {
     const product = { ...laptops[0], price: 40000 };
     const result = getCrossSellRecommendations({
       product,
       products: [
-        { _id: 'below-minimum', name: 'Laptop Bag', category: 'Accessories', price: 3999, stock: 5, active: true, tags: ['laptop', 'bag'] },
-        { _id: 'at-minimum', name: 'Wireless Mouse', category: 'Accessories', price: 4000, stock: 5, active: true, tags: ['laptop', 'mouse'] },
+        { _id: 'within-maximum', name: 'Wireless Mouse', category: 'Accessories', price: 6000, stock: 5, active: true, tags: ['laptop', 'mouse'] },
+        { _id: 'above-maximum', name: 'Laptop Bag', category: 'Accessories', price: 6001, stock: 5, active: true, tags: ['laptop', 'bag'] },
       ],
     });
 
-    expect(result.targetPrice).toBe(4000);
+    expect(result.maximumPrice).toBe(6000);
     expect(result.recommendations.map((item) => item.name)).toEqual(['Wireless Mouse']);
   });
 

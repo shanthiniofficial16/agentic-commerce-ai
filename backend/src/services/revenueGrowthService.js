@@ -315,19 +315,17 @@ const buildCrossSellRecommendationSet = ({ product, products = [], maxItems = 3 
   if (!product || !Array.isArray(products) || !products.length) return [];
 
   const selectedFamily = detectProductFamily(product);
-  const targetPrice = Number(product.price || 0) * 0.10;
-  const maximumPrice = Number(product.price || 0) * 0.12;
+  const maximumPrice = Number(product.price || 0) * 0.15;
 
   const ranked = products
     .filter((item) => item
-      && Number(item.price || 0) >= targetPrice
       && Number(item.price || 0) <= maximumPrice
       && isRelevantCrossSellCandidate({ selected: product, candidate: item }))
     .map((item) => {
       const relevanceScore = getCompatibilityScore({ selected: product, candidate: item });
       const relationshipPriority = getRelationshipPriorityByName({ selectedFamily, candidate: item });
       const compatibilityScore = relevanceScore + relationshipPriority;
-      const priceDifference = Math.abs(Number(item.price || 0) - targetPrice);
+      const priceDifference = Math.abs(Number(item.price || 0) - maximumPrice);
       const reason = getRelationshipReason({ selectedFamily, candidate: item });
       const benefit = reason;
 
@@ -338,7 +336,6 @@ const buildCrossSellRecommendationSet = ({ product, products = [], maxItems = 3 
         compatibilityScore,
         relationshipPriority,
         priceDifference,
-        targetPrice,
         maximumPrice,
         reason,
         benefit,
@@ -369,7 +366,6 @@ const buildCrossSellRecommendationSet = ({ product, products = [], maxItems = 3 
       relevanceScore: item.relevanceScore,
       compatibilityScore: item.compatibilityScore,
       priceDifference: item.priceDifference,
-      targetPrice,
       maximumPrice,
     }));
 
@@ -378,8 +374,7 @@ const buildCrossSellRecommendationSet = ({ product, products = [], maxItems = 3 
 
 const getCrossSellRecommendations = ({ product, products = [] }) => {
   const selectedProductId = product?._id ? product._id.toString() : (product?.id || null);
-  const targetPrice = Number(product?.price || 0) * 0.10;
-  const maximumPrice = Number(product?.price || 0) * 0.12;
+  const maximumPrice = Number(product?.price || 0) * 0.15;
   const recommendations = buildCrossSellRecommendationSet({ product, products, maxItems: 3 }).map((item) => ({
     _id: item.id,
     id: item.id,
@@ -402,7 +397,6 @@ const getCrossSellRecommendations = ({ product, products = [] }) => {
 
   return {
     selectedProductId,
-    targetPrice,
     maximumPrice,
     recommendations,
   };
