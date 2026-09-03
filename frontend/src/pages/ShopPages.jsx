@@ -9,13 +9,16 @@ export function Assistant({ onAdd, onNotify, onCartChange }) {
   const [orderPreview, setOrderPreview] = useState(null)
   const [crossSellItems, setCrossSellItems] = useState([])
   const [crossSellMessage, setCrossSellMessage] = useState('')
+  const [selectedCrossSell, setSelectedCrossSell] = useState(null)
 
   const handleCrossSellAdd = async (product) => {
+    if (selectedCrossSell?.id === (product.id || product._id)) return
     try {
       setBusy(true)
       const updatedCart = await addToCart(product.id || product._id, 1, 'ai_cross_sell')
       onCartChange?.(updatedCart)
       setOrderPreview((preview) => preview ? { ...preview, items: updatedCart.items, total: updatedCart.total } : preview)
+      setSelectedCrossSell({ id: product.id || product._id, merchantId: updatedCart.merchantId })
       setCrossSellItems((items) => items.filter((item) => (item.id || item._id) !== (product.id || product._id)))
       setMessages((items) => [...items, { role: 'agent', text: `Added ${product.name} to your cart. Your updated total is ${money(updatedCart?.total || 0)}.` }])
     } catch (error) {
@@ -40,7 +43,13 @@ export function Assistant({ onAdd, onNotify, onCartChange }) {
       setOrderPreview(result?.orderPreview || null)
       const nextCrossSell = Array.isArray(result?.crossSell) ? result.crossSell : []
       setCrossSellItems(isCheckoutStage ? nextCrossSell.slice(0, 1) : [])
-      setCrossSellMessage(isCheckoutStage && nextCrossSell.length ? 'COMPLETE YOUR SETUP' : '')
+      if (isCheckoutStage && nextCrossSell.length && selectedCrossSell?.id !== (nextCrossSell[0].id || nextCrossSell[0]._id)) {
+        const updatedCart = await addToCart(nextCrossSell[0].id || nextCrossSell[0]._id, 1, 'ai_cross_sell')
+        onCartChange?.(updatedCart)
+        setOrderPreview((preview) => preview ? { ...preview, items: updatedCart.items, total: updatedCart.total } : preview)
+        setSelectedCrossSell({ id: nextCrossSell[0].id || nextCrossSell[0]._id, merchantId: updatedCart.merchantId })
+      }
+      setCrossSellMessage(isCheckoutStage && nextCrossSell.length ? <><span>COMPLETE YOUR SETUP</span><button className="button outline cross-sell-skip" onClick={skipCrossSell}>Skip</button></> : '')
       setMessages((items) => [...items, {
         role: 'agent',
         text: typeof result?.message === 'string' && result.message.trim() ? result.message : 'I could not generate a response for that request.',
@@ -117,6 +126,21 @@ export function Assistant({ onAdd, onNotify, onCartChange }) {
         razorpayInstance.open()
       } catch (error) {
         setMessages((items) => [...items, { role: 'agent', text: error.response?.data?.error?.message || error.message || 'I could not place that order.' }]);
+        setBusy(false)
+      }
+    }
+    const skipCrossSell = async () => {
+      if (!selectedCrossSell) return setCrossSellItems([])
+      try {
+        setBusy(true)
+        const updatedCart = await removeFromCart(selectedCrossSell.id, selectedCrossSell.merchantId)
+        onCartChange?.(updatedCart)
+        setOrderPreview((preview) => preview ? { ...preview, items: updatedCart.items, total: updatedCart.total } : preview)
+        setSelectedCrossSell(null)
+        setCrossSellItems([])
+      } catch (error) {
+        setMessages((items) => [...items, { role: 'agent', text: error.response?.data?.error?.message || 'I could not skip the recommended product right now.' }])
+      } finally {
         setBusy(false)
       }
     }
