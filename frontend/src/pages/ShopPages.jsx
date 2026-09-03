@@ -13,7 +13,7 @@ export function Assistant({ onAdd, onNotify, onCartChange }) {
   const handleCrossSellAdd = async (product) => {
     try {
       setBusy(true)
-      const updatedCart = await addToCart(product.id || product._id, 1)
+      const updatedCart = await addToCart(product.id || product._id, 1, 'ai_cross_sell')
       onCartChange?.(updatedCart)
       setOrderPreview((preview) => preview ? { ...preview, items: updatedCart.items, total: updatedCart.total } : preview)
       setCrossSellItems((items) => items.filter((item) => (item.id || item._id) !== (product.id || product._id)))

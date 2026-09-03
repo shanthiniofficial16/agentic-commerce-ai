@@ -78,7 +78,7 @@ const createCart = async (req, res) => {
 
 const addToCart = async (req, res) => {
   try {
-    const { productId, quantity, merchantId } = req.body;
+    const { productId, quantity, merchantId, source } = req.body;
 
     if (!productId || !quantity || quantity < 1) {
       return res.status(400).json({
@@ -117,12 +117,19 @@ const addToCart = async (req, res) => {
     // Check if product already in cart
     const existingItem = cart.items.find(item => item.productId.toString() === productId);
     if (existingItem) {
+      if (source === 'ai_cross_sell' && existingItem.source === 'ai_cross_sell') {
+        return res.status(409).json({
+          success: false,
+          error: { code: 'RECOMMENDATION_ALREADY_IN_CART', message: 'That recommendation is already in your cart.' },
+        });
+      }
       existingItem.quantity += quantity;
     } else {
       cart.items.push({
         productId,
         quantity,
         price: product.price,
+        source: ['ai_cross_sell', 'ai_upsell'].includes(source) ? source : 'customer',
       });
     }
 

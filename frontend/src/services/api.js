@@ -28,8 +28,8 @@ export async function getCart() {
   return response.data.data.cart
 }
 
-export async function addToCart(productId, quantity = 1) {
-  const response = await api.post('/api/cart/items', { productId, quantity })
+export async function addToCart(productId, quantity = 1, source = 'customer') {
+  const response = await api.post('/api/cart/items', { productId, quantity, source })
   return response.data.data.cart
 }
 
