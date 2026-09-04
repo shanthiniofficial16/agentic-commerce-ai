@@ -35,6 +35,12 @@ const createOrder = async (req, res) => {
       },
     });
   } catch (error) {
+    console.error('Razorpay order creation failed', {
+      code: error.code,
+      description: error.error_description || error.description || error.message,
+      reason: error.error_reason || error.reason,
+      step: error.error_step || error.step,
+    });
     const safe = sanitizeErrorPayload(error, 'Razorpay order could not be created right now.');
     const statusCode = error.status || 500;
     return res.status(statusCode).json({
@@ -114,6 +120,12 @@ const verify = async (req, res) => {
       },
     });
   } catch (error) {
+    console.error('Razorpay payment verification failed', {
+      code: error.code,
+      description: error.error_description || error.description || error.message,
+      reason: error.error_reason || error.reason,
+      step: error.error_step || error.step,
+    });
     const safe = sanitizeErrorPayload(error, 'Payment could not be verified. Your order has not been marked as paid.');
     return res.status(error.status || 500).json({ success: false, error: { code: error.code || 'PAYMENT_VERIFICATION_FAILED', message: safe.message } });
   }

@@ -3,6 +3,7 @@ const Conversation = require('../models/Conversation');
 const AgentAction = require('../models/AgentAction');
 const Merchant = require('../models/Merchant');
 const Product = require('../models/Product');
+const Cart = require('../models/Cart');
 const { runAgent, isPurchaseIntent } = require('../services/agent/agentService');
 const { createOrder, createPendingPayment } = require('../services/order.service');
 const { executeTool } = require('../services/agent/tools');
@@ -52,7 +53,27 @@ const createPaymentSessionForConversation = async ({ req, conversation }) => {
     total: conversation.pendingOrder.total || conversation.pendingOrder.product?.price || 0,
   };
 
-  const cartOrder = conversation.pendingOrder;
+  const activeCart = await Cart.findOne({ userId: req.userId, merchantId: conversation.merchantId, status: 'ACTIVE' }).lean();
+  const originalItems = pendingOrder.items || [{
+    productId: pendingOrder.product.id,
+    name: pendingOrder.product.name,
+    price: pendingOrder.product.price,
+    quantity: pendingOrder.quantity,
+    source: 'customer',
+  }];
+  const itemMap = new Map(originalItems.map((item) => [String(item.productId?._id || item.productId), item]));
+  for (const cartItem of activeCart?.items || []) {
+    const productId = String(cartItem.productId?._id || cartItem.productId);
+    const existing = itemMap.get(productId);
+    if (existing) {
+      existing.quantity = cartItem.quantity;
+      existing.price = cartItem.price ?? existing.price;
+      existing.source = cartItem.source || existing.source || 'customer';
+    } else {
+      itemMap.set(productId, cartItem);
+    }
+  }
+  const cartOrder = { ...pendingOrder, items: [...itemMap.values()] };
   if (!cartOrder?.product?.id && !cartOrder?.items?.length) {
     throw Object.assign(new Error('No products selected for this order'), { code: 'ORDER_NOT_READY', status: 409 });
   }

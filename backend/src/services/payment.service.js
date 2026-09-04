@@ -110,6 +110,9 @@ const createCheckoutOrderForUser = async ({ userId, merchantId, frontendAmount }
       currency: 'INR',
       receipt,
     });
+    if (Number(razorpayResponse?.order?.amount) !== amountInPaise) {
+      throw Object.assign(new Error('Razorpay returned an unexpected order amount.'), { code: 'INVALID_AMOUNT', status: 502 });
+    }
   } catch (error) {
     paymentRecord.status = 'FAILED';
     paymentRecord.failureReason = error.message;
