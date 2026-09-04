@@ -4,7 +4,7 @@ const AgentAction = require('../models/AgentAction');
 const Merchant = require('../models/Merchant');
 const Product = require('../models/Product');
 const { runAgent, isPurchaseIntent } = require('../services/agent/agentService');
-const { createOrder, createPendingPayment, prepareCartOrder } = require('../services/order.service');
+const { createOrder, createPendingPayment } = require('../services/order.service');
 const { executeTool } = require('../services/agent/tools');
 const { sanitizeErrorPayload } = require('../utils/errorMessageMap');
 
@@ -52,10 +52,10 @@ const createPaymentSessionForConversation = async ({ req, conversation }) => {
     total: conversation.pendingOrder.total || conversation.pendingOrder.product?.price || 0,
   };
 
-  const cartOrder = await prepareCartOrder({
-    userId: req.userId,
-    merchantId: conversation.merchantId,
-  });
+  const cartOrder = conversation.pendingOrder;
+  if (!cartOrder?.product?.id && !cartOrder?.items?.length) {
+    throw Object.assign(new Error('No products selected for this order'), { code: 'ORDER_NOT_READY', status: 409 });
+  }
   const paymentSession = await createPendingPayment({
     userId: req.userId,
     merchantId: conversation.merchantId,

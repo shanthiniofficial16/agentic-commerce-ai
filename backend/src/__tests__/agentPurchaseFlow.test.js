@@ -4,6 +4,7 @@ describe('purchase intent detection for checkout flow', () => {
   test('recognizes direct product purchase phrases', () => {
     expect(isPurchaseIntent('I want to buy CodeCraft Laptop 162 Plus')).toBe(true);
     expect(isPurchaseIntent('Buy this')).toBe(true);
+    expect(isPurchaseIntent('buy me')).toBe(true);
     expect(isPurchaseIntent('Purchase this')).toBe(true);
     expect(isPurchaseIntent('I want this')).toBe(true);
     expect(isPurchaseIntent('Place an order for this')).toBe(true);

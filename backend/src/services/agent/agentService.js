@@ -92,7 +92,7 @@ const requiredToolFor = (message) => {
 
 const isPurchaseIntent = (message) => {
   const text = message.toLowerCase();
-  return /(i want to buy|i want this|i want to purchase|buy this|purchase this|buy the|purchase the|place an order for this|place an order for that|proceed with this|proceed with that|proceed with this product|proceed with that product|buy it|purchase it)/.test(text)
+  return /(i want to buy|i want this|i want to purchase|buy this|purchase this|buy the|purchase the|place an order for this|place an order for that|proceed with this|proceed with that|proceed with this product|proceed with that product|buy it|buy me|purchase it)/.test(text)
     || /^(buy|purchase|place an order|proceed|i want this|i want to buy|i want to purchase)\b/.test(text)
     || /\b(buy|purchase|order|place|proceed)\b.*\b(this|that|it|product)\b/.test(text);
 };
@@ -737,8 +737,7 @@ const runAgent = async ({ message, history = [], context }) => {
       const productId = purchaseTarget.id || purchaseTarget._id?.toString?.() || purchaseTarget._id;
       if (productId) {
         const product = await executeTool('getProductDetails', { productId }, context);
-        await executeTool('addToCart', { productId, quantity: 1, source: 'customer' }, context);
-        const prepared = await executeTool('prepareCartOrder', {}, context);
+        const prepared = await executeTool('prepareOrder', { productId, quantity: 1 }, context);
         context.pendingOrder = prepared;
 
         if (prepared.state === 'PROFILE_REQUIRED') {
