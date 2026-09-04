@@ -31,6 +31,8 @@ const formatPeriod = (period) => {
   return new Date(Number(year), Number(month) - 1, 1).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' });
 };
 
+const orderItemsRevenue = (order) => (order.items || []).reduce((sum, item) => sum + Number(item.price || 0) * Number(item.quantity || 0), 0);
+
 const getMerchantAnalytics = async (merchantId, dateFilter = null) => {
   const dateQuery = buildDateQuery(dateFilter);
   const [successfulOrders, payments, actions] = await Promise.all([
@@ -44,7 +46,7 @@ const getMerchantAnalytics = async (merchantId, dateFilter = null) => {
   ]);
 
   const items = successfulOrders.flatMap((order) => order.items || []);
-  const totalRevenue = successfulOrders.reduce((sum, order) => sum + Number(order.total || 0), 0);
+  const totalRevenue = successfulOrders.reduce((sum, order) => sum + orderItemsRevenue(order), 0);
   const originalRevenue = items.filter((item) => item.source === 'customer' || !item.source).reduce((sum, item) => sum + Number(item.price || 0) * Number(item.quantity || 0), 0);
   const crossSellRevenue = items.filter((item) => item.source === 'ai_cross_sell').reduce((sum, item) => sum + Number(item.aiIncrementalAmount || (item.price || 0) * (item.quantity || 0)), 0);
   const upsellRevenue = items.filter((item) => item.source === 'ai_upsell').reduce((sum, item) => sum + Number(item.aiIncrementalAmount || 0), 0);
@@ -62,7 +64,7 @@ const getMerchantAnalytics = async (merchantId, dateFilter = null) => {
   successfulOrders.forEach((order) => {
     const period = toPeriodKey(order.createdAt);
     const bucket = revenueByPeriod.get(period) || { period, revenueWithoutAi: 0, revenueWithAi: 0 };
-    const orderTotal = Number(order.total || 0);
+    const orderTotal = orderItemsRevenue(order);
     const orderAiRevenue = (order.items || []).filter((item) => ['ai_cross_sell', 'ai_upsell'].includes(item.source)).reduce((sum, item) => sum + Number(item.aiIncrementalAmount || (item.source === 'ai_cross_sell' ? item.price || 0 : 0) * Number(item.quantity || 0)), 0);
     bucket.revenueWithoutAi += orderTotal - orderAiRevenue;
     bucket.revenueWithAi += orderTotal;

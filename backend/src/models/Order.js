@@ -43,6 +43,11 @@ const orderSchema = new mongoose.Schema(
     originalProductValue: { type: Number, default: 0, min: 0 },
     crossSellRevenue: { type: Number, default: 0, min: 0 },
     finalOrderValue: { type: Number, default: 0, min: 0 },
+    source: {
+      type: String,
+      enum: ['live', 'seed-historical-2026'],
+      default: 'live',
+    },
     currency: {
       type: String,
       default: 'INR',

@@ -8,6 +8,7 @@
     "dev": "nodemon src/server.js",
     "seed": "node src/scripts/seed.js",
     "seed:products": "node src/scripts/seedProducts.js",
+    "seed:historical-orders": "node src/scripts/seedHistoricalOrders.js",
     "test:openrouter": "node src/scripts/test-openrouter.js",
     "test": "jest --detectOpenHandles",
     "test:watch": "jest --watch"
