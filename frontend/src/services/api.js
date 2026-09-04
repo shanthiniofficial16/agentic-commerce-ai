@@ -94,6 +94,11 @@ export async function createRazorpayOrder(merchantId) {
   return response.data
 }
 
+export async function getCheckoutRecommendation(merchantId) {
+  const response = await api.post('/api/payments/recommendation', { merchantId })
+  return response.data?.data || {}
+}
+
 export async function verifyRazorpayPayment(payload) {
   const response = await api.post('/api/payment/verify', payload)
   return response.data

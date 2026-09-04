@@ -8,6 +8,8 @@ const getRealSpecs = (product = {}) => {
     generation: specs.generation || null,
     storage: specs.storage || null,
     display: specs.display || null,
+    graphics: specs.graphics || specs.graphicsCard || specs.gpu || null,
+    operatingSystem: specs.operatingSystem || specs.os || null,
     branding: product.brand || null,
     rating: product.ratings?.average ?? null,
   };
@@ -95,6 +97,13 @@ const rankProducts = ({ products = [], userMessage = '', categoryHint = null }) 
     return { ...product, score };
   });
 
+  const budgetMatch = message.match(/under\s*₹?\s*(\d+(?:,\d{3})*(?:\.\d+)?)/i)
+    || message.match(/budget\s*(?:of)?\s*₹?\s*(\d+(?:,\d{3})*(?:\.\d+)?)/i);
+  const hasCheapestIntent = /\bcheapest\b|\blowest price\b|\blowest priced\b/.test(message);
+  if (budgetMatch && !hasCheapestIntent) {
+    return ranked.sort((a, b) => Number(b.price || 0) - Number(a.price || 0) || b.score - a.score);
+  }
+
   return ranked.sort((a, b) => b.score - a.score);
 };
 
@@ -106,6 +115,9 @@ const buildLaptopSummary = (product) => {
     specs.storage ? `• ${specs.storage} storage for faster application loading` : null,
     specs.display ? `• ${specs.display} display for a more comfortable workspace` : null,
     specs.processor ? `• ${specs.processor} for better overall performance` : null,
+    specs.graphics ? `• ${specs.graphics} graphics for visual work, media, or gaming` : null,
+    specs.operatingSystem ? `• ${specs.operatingSystem} for a familiar, ready-to-use interface` : null,
+    ...(Array.isArray(product.keyFeatures) ? product.keyFeatures.map((feature) => `• ${feature}`) : []),
   ].filter(Boolean);
 
   return [

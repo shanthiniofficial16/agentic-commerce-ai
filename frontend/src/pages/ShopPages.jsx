@@ -187,7 +187,7 @@ export function Assistant({ onAdd, onNotify, onCartChange }) {
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { ArrowRight, Bot, Check, ChevronDown, Heart, Minus, Plus, Search, ShoppingBag, Sparkles, Star, Trash2, Truck, X } from 'lucide-react'
-import { addToCart, cancelAgentOrder, confirmAgentOrder, createRazorpayOrder, getCart, getOrders, getProduct, getProducts, getUserProfile, removeFromCart, sendAgentMessage, updateCartItem, verifyRazorpayPayment } from '../services/api'
+import { addToCart, cancelAgentOrder, confirmAgentOrder, createRazorpayOrder, getCart, getCheckoutRecommendation, getOrders, getProduct, getProducts, getUserProfile, removeFromCart, sendAgentMessage, updateCartItem, verifyRazorpayPayment } from '../services/api'
 import '../Agent.css'
 
 const categories = ['Electronics', 'Fashion', 'Beauty', 'Home & Kitchen', 'Grocery', 'Sports', 'Books', 'Accessories']
@@ -268,13 +268,18 @@ const loadRazorpayScript = () => new Promise((resolve, reject) => {
   document.body.appendChild(script)
 })
 
-export function Checkout({ cart }) {
+export function Checkout({ cart, onCartChange }) {
   const navigate = useNavigate()
+  const [checkoutCart, setCheckoutCart] = useState(cart)
   const [step, setStep] = useState(1)
   const [done, setDone] = useState(false)
   const [processing, setProcessing] = useState(false)
   const [error, setError] = useState('')
+  const [recommendation, setRecommendation] = useState(null)
+  const [recommendationChecked, setRecommendationChecked] = useState(false)
   const [profile, setProfile] = useState({ fullName: '', email: '', phone: '' })
+
+  useEffect(() => { setCheckoutCart(cart) }, [cart])
 
   useEffect(() => {
     let active = true
@@ -290,7 +295,7 @@ export function Checkout({ cart }) {
   }, [])
 
   const handleCheckout = async () => {
-    if (!cart || !cart.items?.length) {
+    if (!checkoutCart || !checkoutCart.items?.length) {
       setError('Your cart is empty. Add an item before checkout.')
       return
     }
@@ -299,8 +304,16 @@ export function Checkout({ cart }) {
     setProcessing(true)
 
     try {
+      if (!recommendationChecked) {
+        const result = await getCheckoutRecommendation(checkoutCart.merchantId)
+        setRecommendation(result.recommendation || null)
+        setRecommendationChecked(true)
+        setProcessing(false)
+        return
+      }
+
       await loadRazorpayScript()
-      const response = await createRazorpayOrder(cart.merchantId)
+      const response = await createRazorpayOrder(checkoutCart.merchantId)
       const payload = response?.data
       if (!payload || !payload.keyId || !payload.razorpayOrderId) {
         throw new Error('The payment session could not be created. Please try again.')
@@ -364,6 +377,22 @@ export function Checkout({ cart }) {
       razorpayInstance.open()
     } catch (err) {
       setError(err.response?.data?.error?.message || err.message || 'Unable to start the secure payment flow.')
+      setProcessing(false)
+    }
+  }
+
+  const acceptRecommendation = async () => {
+    if (!recommendation) return
+    setProcessing(true)
+    setError('')
+    try {
+      const updatedCart = await addToCart(recommendation.id, 1, 'ai_cross_sell')
+      setCheckoutCart(updatedCart)
+      onCartChange?.(updatedCart)
+      setRecommendation(null)
+    } catch (err) {
+      setError(err.response?.data?.error?.message || 'Could not add the recommendation to your cart.')
+    } finally {
       setProcessing(false)
     }
   }
@@ -449,16 +478,18 @@ export function Checkout({ cart }) {
         )}
 
         <div className="checkout-summary">
-          {(cart?.items || []).map((item) => {
+          {(checkoutCart?.items || []).map((item) => {
             const product = item.productId || {}
             const productId = product._id || item.productId || item._id
             const price = Number(item.price || product.price || 0)
             return <div className="line" key={productId}><span>{product.name || item.productName || 'Product'} × {item.quantity}</span><strong>{money(price * Number(item.quantity || 0))}</strong></div>
           })}
-          <div className="line"><span>Subtotal</span><strong>{money(cart?.subtotal || cart?.total || 0)}</strong></div>
+          <div className="line"><span>Subtotal</span><strong>{money(checkoutCart?.subtotal || checkoutCart?.total || 0)}</strong></div>
           <div className="line"><span>Shipping</span><strong>Free</strong></div>
-          <div className="line total"><span>Total</span><strong>{money(cart?.total || 0)}</strong></div>
+          <div className="line total"><span>Total</span><strong>{money(checkoutCart?.total || 0)}</strong></div>
         </div>
+
+        {recommendation && <div className="cross-sell-panel"><div className="cross-sell-header"><span>Recommended for your order</span></div><div className="cross-sell-grid"><article className="cross-sell-card"><img src={imageFor(recommendation)} alt={recommendation.name} /><div className="cross-sell-card-body"><h4>{recommendation.name}</h4><p className="cross-sell-price">{money(recommendation.price)}</p><p className="cross-sell-benefit">{recommendation.benefit || recommendation.reason || 'A useful addition to your order.'}</p><button className="button primary" onClick={acceptRecommendation} disabled={processing}>Add to cart</button><button className="button outline" onClick={() => setRecommendation(null)} disabled={processing}>Continue without it</button></div></article></div></div>}
 
         {error && <div className="notice error-state" style={{ marginTop: '18px' }}>{error}</div>}
 
@@ -467,7 +498,7 @@ export function Checkout({ cart }) {
             <button className="button primary" onClick={() => setStep(step + 1)}>Continue</button>
           ) : (
             <button className="button primary" onClick={handleCheckout} disabled={processing}>
-              {processing ? 'Processing...' : 'Proceed to secure payment'}
+              {processing ? 'Processing...' : recommendation ? 'Choose an option above' : 'Proceed to secure payment'}
             </button>
           )}
         </div>

@@ -63,9 +63,11 @@ const getMerchantAnalytics = async (merchantId, dateFilter = null) => {
   const revenueByPeriod = new Map();
   successfulOrders.forEach((order) => {
     const period = toPeriodKey(order.createdAt);
-    const bucket = revenueByPeriod.get(period) || { period, revenueWithoutAi: 0, revenueWithAi: 0 };
+    const bucket = revenueByPeriod.get(period) || { period, revenueWithoutAi: 0, revenueWithAi: 0, monthlyUpsellRevenue: 0, monthlyCrossSellRevenue: 0 };
     const orderTotal = orderItemsRevenue(order);
     const orderAiRevenue = (order.items || []).filter((item) => ['ai_cross_sell', 'ai_upsell'].includes(item.source)).reduce((sum, item) => sum + Number(item.aiIncrementalAmount || (item.source === 'ai_cross_sell' ? item.price || 0 : 0) * Number(item.quantity || 0)), 0);
+    bucket.monthlyUpsellRevenue += (order.items || []).filter((item) => item.source === 'ai_upsell').reduce((sum, item) => sum + Number(item.aiIncrementalAmount || 0), 0);
+    bucket.monthlyCrossSellRevenue += (order.items || []).filter((item) => item.source === 'ai_cross_sell').reduce((sum, item) => sum + Number(item.aiIncrementalAmount || (item.price || 0) * Number(item.quantity || 0)), 0);
     bucket.revenueWithoutAi += orderTotal - orderAiRevenue;
     bucket.revenueWithAi += orderTotal;
     revenueByPeriod.set(period, bucket);

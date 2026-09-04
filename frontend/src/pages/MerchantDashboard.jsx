@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { Activity, ArrowDownRight, ArrowUpRight, BarChart3, Bot, CheckCircle2, ClipboardList, CreditCard, LogOut, Package, Plus, Sparkles, TrendingUp, Wallet, XCircle } from 'lucide-react'
-import { Bar, BarChart, CartesianGrid, Cell, Legend, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Legend, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { useAuth } from '../hooks/useAuth'
 import { createProduct, getMerchantAnalytics } from '../services/api'
 
@@ -34,6 +34,12 @@ function EmptyChart({ text = 'Not enough successful transaction data yet.' }) {
 function ChartTip({ active, payload, label }) {
   if (!active || !payload?.length) return null
   return <div className="chart-tip"><strong>{label}</strong>{payload.map((entry) => <span key={entry.dataKey}><i style={{ background: entry.color }} />{entry.name}: {money(entry.value)}</span>)}</div>
+}
+
+function RevenueTrendTip({ active, payload, label }) {
+  if (!active || !payload?.length) return null
+  const entry = payload[0]
+  return <div className="chart-tip"><strong>{label} 2026</strong><span><i style={{ background: entry.color }} />{entry.name}: {money(entry.value)}</span></div>
 }
 
 function ProductCreator({ auth, onBack }) {
@@ -106,6 +112,16 @@ export default function MerchantDashboard() {
   const growth = analytics?.aiRevenueGrowthPercentage || 0
   const comparison = analytics?.revenueComparison || []
   const comparisonData = comparison.length ? comparison : [{ label: 'No orders', revenueWithoutAi: 0, revenueWithAi: 0 }]
+  const trendData = Array.from({ length: 9 }, (_, index) => {
+    const period = `2026-${String(index + 1).padStart(2, '0')}`
+    const month = comparison.find((entry) => entry.period === period)
+    return {
+      label: new Date(Date.UTC(2026, index, 1)).toLocaleDateString('en-US', { month: 'short' }),
+      fullLabel: new Date(Date.UTC(2026, index, 1)).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
+      upsellRevenue: Number(month?.monthlyUpsellRevenue || 0),
+      crossSellRevenue: Number(month?.monthlyCrossSellRevenue || 0),
+    }
+  })
   const mix = analytics ? [
     { name: 'Upsell', value: analytics.upsellRevenue, color: '#ef8354' },
     { name: 'Cross-sell', value: analytics.crossSellRevenue, color: '#3b82a0' },
@@ -146,7 +162,7 @@ export default function MerchantDashboard() {
         <section className="command-section">
           <SectionHeading eyebrow="AI growth breakdown" title="Where the lift comes from" detail="Incremental revenue from successful orders" />
           <div className="command-metric-grid four"><Metric label="Upsell Revenue" value={money(analytics.upsellRevenue)} detail="Upgrade value" icon={ArrowUpRight} tone="orange" /><Metric label="Cross-sell Revenue" value={money(analytics.crossSellRevenue)} detail="Complementary value" icon={Sparkles} tone="blue" /><Metric label="AI-assisted Orders" value={number(analytics.aiAssistedOrders)} detail={`${percent(analytics.aiConversionRate)} of paid orders`} icon={Bot} tone="positive" /><Metric label="Revenue per AI Order" value={money(analytics.averageAiRevenuePerAiAssistedOrder)} detail="Additional value per order" icon={TrendingUp} /></div>
-          <div className="growth-charts"><div className="chart-panel small-chart"><h3>Upsell revenue</h3><ResponsiveContainer width="100%" height={220}><BarChart data={[{ name: analytics.upsellRevenue > 0 ? 'Upsell' : 'No data', revenue: analytics.upsellRevenue }]} layout="vertical" margin={{ top: 8, right: 18, left: 12, bottom: 8 }}><XAxis type="number" hide /><YAxis type="category" dataKey="name" hide /><Tooltip formatter={(value) => money(value)} cursor={{ fill: '#fff7f1' }} /><Bar dataKey="revenue" fill="#ef8354" radius={[0, 5, 5, 0]} barSize={42} /></BarChart></ResponsiveContainer></div><div className="chart-panel small-chart"><h3>Cross-sell revenue</h3><ResponsiveContainer width="100%" height={220}><BarChart data={[{ name: analytics.crossSellRevenue > 0 ? 'Cross-sell' : 'No data', revenue: analytics.crossSellRevenue }]} layout="vertical" margin={{ top: 8, right: 18, left: 12, bottom: 8 }}><XAxis type="number" hide /><YAxis type="category" dataKey="name" hide /><Tooltip formatter={(value) => money(value)} cursor={{ fill: '#eef7fa' }} /><Bar dataKey="revenue" fill="#3b82a0" radius={[0, 5, 5, 0]} barSize={42} /></BarChart></ResponsiveContainer></div></div>
+          <div className="growth-charts"><div className="chart-panel small-chart"><h3>Upsell Revenue</h3><ResponsiveContainer width="100%" height={220}><AreaChart data={trendData} margin={{ top: 8, right: 12, left: 8, bottom: 8 }}><defs><linearGradient id="upsellRevenueFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#ef8354" stopOpacity={0.35} /><stop offset="100%" stopColor="#ef8354" stopOpacity={0.03} /></linearGradient></defs><XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fill: '#708078', fontSize: 11 }} /><YAxis tickFormatter={(value) => `₹${Math.round(value / 1000)}k`} tickLine={false} axisLine={false} tick={{ fill: '#708078', fontSize: 11 }} /><Tooltip labelFormatter={(_, payload) => payload?.[0]?.payload.fullLabel} content={<RevenueTrendTip />} /><Area type="monotone" dataKey="upsellRevenue" name="Upsell Revenue" stroke="#ef8354" strokeWidth={2} fill="url(#upsellRevenueFill)" dot={{ r: 3, fill: '#ef8354' }} activeDot={{ r: 5 }} /></AreaChart></ResponsiveContainer></div><div className="chart-panel small-chart"><h3>Cross-sell Revenue</h3><ResponsiveContainer width="100%" height={220}><AreaChart data={trendData} margin={{ top: 8, right: 12, left: 8, bottom: 8 }}><defs><linearGradient id="crossSellRevenueFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#3b82a0" stopOpacity={0.35} /><stop offset="100%" stopColor="#3b82a0" stopOpacity={0.03} /></linearGradient></defs><XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fill: '#708078', fontSize: 11 }} /><YAxis tickFormatter={(value) => `₹${Math.round(value / 1000)}k`} tickLine={false} axisLine={false} tick={{ fill: '#708078', fontSize: 11 }} /><Tooltip labelFormatter={(_, payload) => payload?.[0]?.payload.fullLabel} content={<RevenueTrendTip />} /><Area type="monotone" dataKey="crossSellRevenue" name="Cross-sell Revenue" stroke="#3b82a0" strokeWidth={2} fill="url(#crossSellRevenueFill)" dot={{ r: 3, fill: '#3b82a0' }} activeDot={{ r: 5 }} /></AreaChart></ResponsiveContainer></div></div>
         </section>
 
         <section className="command-section split-section">

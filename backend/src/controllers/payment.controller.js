@@ -2,9 +2,41 @@ const mongoose = require('mongoose');
 const Conversation = require('../models/Conversation');
 const Order = require('../models/Order');
 const Payment = require('../models/Payment');
+const Cart = require('../models/Cart');
+const Product = require('../models/Product');
 const { verifyAndFinalizePayment } = require('../services/order.service');
 const { createCheckoutOrderForUser } = require('../services/payment.service');
+const { buildCrossSellRecommendationSet } = require('../services/revenueGrowthService');
 const { sanitizeErrorPayload } = require('../utils/errorMessageMap');
+
+const recommendCheckoutProduct = async (req, res) => {
+  try {
+    const merchantId = req.body.merchantId || req.query.merchantId;
+    if (!merchantId || !mongoose.isValidObjectId(merchantId)) {
+      return res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'A valid merchantId is required' } });
+    }
+
+    const cart = await Cart.findOne({ userId: req.userId, merchantId, status: 'ACTIVE' }).lean();
+    if (!cart?.items?.length) return res.json({ success: true, data: { recommendation: null } });
+
+    const cartProductIds = cart.items.map((item) => item.productId.toString());
+    const selectedItem = [...cart.items].sort((left, right) => Number(right.price || 0) - Number(left.price || 0))[0];
+    const mainProduct = await Product.findOne({ _id: selectedItem.productId, merchantId, active: true }).lean();
+    if (!mainProduct) return res.json({ success: true, data: { recommendation: null } });
+
+    const candidates = await Product.find({
+      merchantId,
+      active: true,
+      stock: { $gt: 0 },
+      _id: { $nin: cartProductIds },
+    }).limit(100).lean();
+    const recommendation = buildCrossSellRecommendationSet({ product: mainProduct, products: candidates, maxItems: 1 })[0] || null;
+    return res.json({ success: true, data: { recommendation, basedOn: { productId: mainProduct._id.toString(), productName: mainProduct.name } } });
+  } catch (error) {
+    const safe = sanitizeErrorPayload(error, 'Checkout recommendations are unavailable right now.');
+    return res.status(error.status || 500).json({ success: false, error: { code: error.code || 'RECOMMENDATION_FAILED', message: safe.message } });
+  }
+};
 
 const createOrder = async (req, res) => {
   try {
@@ -136,4 +168,4 @@ const status = async (req, res) => {
   return res.status(501).json({ success: false, error: { code: 'PAYMENT_STATUS_UNAVAILABLE', message: 'Payment status lookup is not available until a provider transaction is created.' } });
 };
 
-module.exports = { createOrder, verify, status };
+module.exports = { createOrder, verify, status, recommendCheckoutProduct };
