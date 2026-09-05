@@ -95,6 +95,7 @@ describe('POST /api/payments/create-order', () => {
     });
     expect(response.body.data.amount).toBe(100000);
     expect(razorpayProvider.createOrder).toHaveBeenCalled();
+    expect(Cart.findOne).toHaveBeenCalledWith({ userId: 'user_123', merchantId: 'merchant_123', status: 'ACTIVE' });
   });
 
   test('rejects invalid product', async () => {

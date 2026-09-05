@@ -13,7 +13,8 @@ const normalizeAmount = (value) => {
 };
 
 const calculateCartTotal = async ({ userId, merchantId }) => {
-  const cart = await Cart.findOne({ userId, merchantId });
+  const cartQuery = Cart.findOne({ userId, merchantId, status: 'ACTIVE' });
+  const cart = await (typeof cartQuery?.sort === 'function' ? cartQuery.sort({ updatedAt: -1 }) : cartQuery);
   if (!cart || !Array.isArray(cart.items) || cart.items.length === 0) {
     throw Object.assign(new Error('Your cart is empty.'), { code: 'CART_EMPTY', status: 400 });
   }

@@ -22,6 +22,13 @@ const normalizeProductQuery = (message) => message.replace(/\b(i want to buy|i w
 const normalizeCatalogName = (value = '') => String(value).toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
 const getProductId = (product) => product?._id ? product._id.toString() : product?.id || null;
 const isPendingOrder = (order) => ['AWAITING_APPROVAL', 'PENDING_CONFIRMATION'].includes(order?.state);
+const parseRequestedQuantity = (message) => {
+  const match = String(message).match(/\b(?:quantity\s*(?:of|to)?\s*|add\s+)(\d+)\b/i);
+  if (match) return Math.max(1, Math.min(100, Number(match[1])));
+  const words = { one: 1, two: 2, three: 3, four: 4, five: 5 };
+  const wordMatch = String(message).match(/\b(?:add\s+)?(one|two|three|four|five)\b/i);
+  return wordMatch ? words[wordMatch[1].toLowerCase()] : 1;
+};
 
 const getPreviousProductFromContext = (history = [], context = {}) => {
   if (context.currentProduct) return context.currentProduct;
@@ -80,6 +87,8 @@ const pickBestProduct = (products, message) => {
 
 const requiredToolFor = (message) => {
   const text = message.toLowerCase();
+  if (/\b(clear|empty)\b.*\bcart\b/.test(text)) return 'clearCart';
+  if (/\b(compare|comparison)\b/.test(text)) return 'compareProducts';
   if (/\b(in stock|stock|available|availability)\b/.test(text)) return 'checkInventory';
   if (/\b(show|view|what.*in)\b.*\bcart\b|\bmy cart\b/.test(text)) return 'getCart';
   if (/\b(add|put)\b.*\bcart\b/.test(text)) return 'addToCart';
@@ -88,6 +97,56 @@ const requiredToolFor = (message) => {
   if (/\b(my orders|show orders|recent orders)\b/.test(text)) return 'getMyOrders';
   if (/\b(track|where.*order|order status)\b/.test(text)) return 'trackOrder';
   return null;
+};
+
+const getRecentProducts = (history = []) => [...history].reverse().flatMap((item) => Array.isArray(item?.metadata?.products) ? item.metadata.products : []);
+const isNavigationRequest = (message) => /\b(go to|open|take me to|show (?:me|my))\b/i.test(message) && /\b(shop|home|products?|catalog|cart|checkout|orders?|profile|account)\b/i.test(message);
+const navigationPathFor = (message) => {
+  const text = message.toLowerCase();
+  if (/checkout|payment/.test(text)) return '/shop/checkout';
+  if (/cart/.test(text)) return '/shop/cart';
+  if (/order/.test(text)) return '/shop/orders';
+  if (/profile|account/.test(text)) return '/shop/profile';
+  if (/product|catalog/.test(text)) return '/shop/products';
+  return '/shop';
+};
+const isCheckoutRequest = (message) => /\b(proceed|go|take me|start|open)\b.*\b(checkout|payment)\b/i.test(message);
+const isPaymentRequest = (message) => /\b(proceed|go|continue|make)\b.*\b(pay|payment)\b/i.test(message);
+const isComparisonRequest = (message) => /\b(compare|comparison)\b/i.test(message);
+const isAddAfterComparison = (message) => /\b(add|put)\b.*\b(cart|it|one|better|cheaper|first|second)\b/i.test(message);
+const isRemoveCartRequest = (message) => /\b(remove|delete)\b.*\bcart\b/i.test(message);
+const isUpdateCartRequest = (message) => /\b(change|update|set)\b.*\b(quantity|cart)\b/i.test(message);
+const isClearCartRequest = (message) => /\b(clear|empty)\b.*\bcart\b/i.test(message);
+const requestedCartQuantity = (message) => Number(String(message).match(/\b(?:to|quantity\s*(?:of|to)?)\s*(\d+)\b/i)?.[1] || 0);
+const resolveCartMutationTarget = async ({ message, context }) => {
+  const result = await executeTool('getCart', {}, context);
+  const items = result?.cart?.items || [];
+  const normalizedMessage = normalizeCatalogName(message);
+  return items.find((item) => {
+    const name = normalizeCatalogName(item.productId?.name || item.name || '');
+    return name && normalizedMessage.includes(name);
+  }) || (items.length === 1 ? items[0] : null);
+};
+
+const compareFromContext = async ({ message, history, context }) => {
+  const recent = getRecentProducts(history);
+  const requestedCount = /\b(two|2)\b/i.test(message) ? 2 : 4;
+  const unique = [...new Map(recent.filter((product) => product?.id).map((product) => [product.id, product])).values()].slice(0, requestedCount);
+  if (unique.length < 2) return null;
+  const comparison = await executeTool('compareProducts', { productIds: unique.map((product) => product.id) }, context);
+  const products = comparison.products || [];
+  const lines = products.map((product) => {
+    const specs = Object.entries(product.specifications || {}).slice(0, 4).map(([key, value]) => `${key}: ${value}`).join('; ');
+    return `• ${product.name} — ₹${Number(product.price).toLocaleString('en-IN')} — ${product.stock > 0 ? `${product.stock} in stock` : 'out of stock'}${specs ? ` — ${specs}` : ''}`;
+  });
+  let selected = products[0];
+  if (products.length > 1) selected = [...products].sort((a, b) => (Number(b.rating || 0) - Number(a.rating || 0)) || (Number(b.price || 0) - Number(a.price || 0)))[0];
+  if (isAddAfterComparison(message) && selected) {
+    const added = await executeTool('addToCart', { productId: selected.id, quantity: 1 }, context);
+    const verified = await executeTool('getCart', {}, context);
+    return { text: `I compared the products and selected ${selected.name} based on the available rating and price data.\n\n${lines.join('\n')}\n\nDone — ${selected.name} was added to your cart.`, products, selectedProductId: selected.id, cart: verified.cart, added: added.added };
+  }
+  return { text: `I compared these products using their real catalog data:\n${lines.join('\n')}\n\nBased on the available rating and price data, ${selected.name} is the stronger choice.`, products, selectedProductId: selected.id };
 };
 
 const isPurchaseIntent = (message) => {
@@ -228,6 +287,9 @@ const stripComplementaryClauses = (message) => {
 
 const findUpsellAlternative = async ({ product, context }) => {
   if (!product) return null;
+  const currentProductId = product?._id || product?.id;
+  if (!currentProductId) return null;
+
   try {
     const upsell = await Product.findOne({
       merchantId: context.merchantId,
@@ -236,7 +298,7 @@ const findUpsellAlternative = async ({ product, context }) => {
       subcategory: product.subcategory,
       price: { $gt: product.price, $lte: product.price * 1.5 },
       stock: { $gt: 0 },
-      _id: { $ne: product._id },
+      _id: { $ne: currentProductId },
     }).sort({ price: 1 }).lean();
     return upsell || null;
   } catch (error) {
@@ -247,13 +309,16 @@ const findUpsellAlternative = async ({ product, context }) => {
 
 const findAndRecommendUpsell = async ({ product, context }) => {
   if (!product) return null;
+  const productId = getProductId(product);
+  if (!productId) return null;
+
   const upsell = await findUpsellAlternative({ product, context });
   if (!upsell) return null;
   const incrementalRevenue = upsell.price - product.price;
   return {
     text: `I found a higher-spec option that may be a better fit:\n\n${upsell.name}\n₹${Number(upsell.price).toLocaleString('en-IN')}\n\nYour current selection:\n${product.name}\n₹${Number(product.price).toLocaleString('en-IN')}\n\nUpgrade difference:\n₹${Number(incrementalRevenue).toLocaleString('en-IN')}\n\nWould you like to upgrade to the ${upsell.name}?`,
     products: [{
-      id: upsell._id.toString(),
+      id: getProductId(upsell),
       name: upsell.name,
       price: upsell.price,
       stock: upsell.stock,
@@ -263,9 +328,9 @@ const findAndRecommendUpsell = async ({ product, context }) => {
       description: upsell.shortDescription || upsell.description,
     }],
     pendingUpsell: {
-      originalProductId: product._id.toString(),
+      originalProductId: productId,
       originalPrice: product.price,
-      upsellProductId: upsell._id.toString(),
+      upsellProductId: getProductId(upsell),
       upsellPrice: upsell.price,
       incrementalRevenue,
     },
@@ -314,7 +379,7 @@ const resolveComplementaryProducts = async ({ message, history = [], context }) 
   const query = {
     merchantId: context.merchantId,
     active: true,
-    _id: { $ne: main._id },
+    _id: { $ne: main.id },
     $and: [
       {
         $or: [
@@ -362,7 +427,7 @@ const resolveComplementaryProducts = async ({ message, history = [], context }) 
           description: upsell.shortDescription || upsell.description,
         }],
         pendingOrder: null,
-        pendingRecommendation: { productId: upsell._id.toString(), productName: upsell.name },
+        pendingRecommendation: { productId: upsell._id.toString(), productName: upsell.name, originalProductId: main.id, originalProductName: main.name },
       };
     }
     return {
@@ -388,12 +453,14 @@ const resolveComplementaryProducts = async ({ message, history = [], context }) 
       description: product.shortDescription || product.description,
     })),
     pendingOrder: null,
-    pendingRecommendation: { productId: selected[0]._id.toString(), productName: selected[0].name, type: 'CROSS_SELL' },
+    pendingRecommendation: { productId: selected[0]._id.toString(), productName: selected[0].name, originalProductId: main.id, originalProductName: main.name, type: 'CROSS_SELL' },
   };
 };
 
 const getCheckoutRecommendations = async ({ pendingOrder, context }) => {
-  const selectedItem = pendingOrder?.items?.[0] || pendingOrder?.product;
+  const selectedItem = pendingOrder?.items?.length
+    ? [...pendingOrder.items].sort((a, b) => Number(b.price || b.product?.price || 0) - Number(a.price || a.product?.price || 0))[0]
+    : pendingOrder?.product;
   const productId = selectedItem?.productId || selectedItem?.id;
   if (!productId) return [];
 
@@ -470,28 +537,32 @@ const resolveSpecificProductRequest = async ({ message, history = [], context })
   const asksForPrice = /(how much|price|cost|what is the price)/.test(lower);
   const asksForAvailability = /(available|in stock|stock|availability|is .* available)/.test(lower);
   const asksForDetails = /(show me|tell me about|describe|details|what is it)/.test(lower);
-  const asksToAdd = /add .* to my cart|add to cart/.test(lower);
+  const asksToAdd = /\badd\b.*\bcart\b/.test(lower);
   const asksToBuy = /\b(buy|purchase|order)\b/.test(lower);
 
   if (asksToAdd) {
-    const cartResult = await executeTool('addToCart', { productId: current.id, quantity: 1 }, context);
+    const quantity = parseRequestedQuantity(message);
+    const cartResult = await executeTool('addToCart', { productId: current.id, quantity }, context);
+    if (!cartResult.verified) throw new Error(`I could not verify that ${current.name} was added to the cart`);
     const upsellResult = await findAndRecommendUpsell({ product: current, context });
     
     if (upsellResult) {
       return {
-        text: `${current.name} was added to your cart. Current total: ₹${Number(cartResult.total || 0).toLocaleString('en-IN')}.\n\n${upsellResult.text}`,
+        text: `${quantity > 1 ? `${quantity} × ` : ''}${current.name} was added to your cart. Current total: ₹${Number(cartResult.total || 0).toLocaleString('en-IN')}.\n\n${upsellResult.text}`,
         products: [current, ...upsellResult.products],
         pendingOrder: null,
         pendingUpsell: upsellResult.pendingUpsell,
         selectedProductId: getProductId(current),
+        cart: cartResult.cart,
       };
     }
     
     return {
-      text: `${current.name} was added to your cart. Current total: ₹${Number(cartResult.total || 0).toLocaleString('en-IN')}.`,
+      text: `${quantity > 1 ? `${quantity} × ` : ''}${current.name} was added to your cart. Current total: ₹${Number(cartResult.total || 0).toLocaleString('en-IN')}.`,
       products: [current],
       pendingOrder: null,
       selectedProductId: getProductId(current),
+      cart: cartResult.cart,
     };
   }
 
@@ -627,7 +698,57 @@ const runAgent = async ({ message, history = [], context }) => {
     stock: context.currentProduct.stock,
   } : null;
 
-   const combinedIntent = await resolveCombinedShoppingIntent({ message, history, context });
+  if (isNavigationRequest(message) && !isCheckoutRequest(message)) {
+    const path = navigationPathFor(message);
+    const result = await executeTool('navigate', { path }, context);
+    return { text: `Opening ${path === '/shop' ? 'the shop' : path.replace('/shop/', '')} now.`, products: [], pendingOrder: null, action: result };
+  }
+
+  if (isPaymentRequest(message)) {
+    const result = await executeTool('proceedToPayment', {}, context);
+    const crossSell = await getCheckoutRecommendations({ pendingOrder: result, context });
+    const hasRecommendation = crossSell.length > 0;
+    return {
+      text: hasRecommendation
+        ? `Your cart is validated. I found one relevant addition for your order before payment: ${crossSell[0].name} — ₹${Number(crossSell[0].price).toLocaleString('en-IN')}. Review it in checkout, then continue to secure payment.`
+        : 'Your cart is validated. Opening the secure payment flow now.',
+      products: [],
+      crossSell,
+      pendingOrder: result,
+      action: { type: hasRecommendation ? 'START_CHECKOUT' : 'PROCEED_TO_PAYMENT', path: '/shop/checkout' },
+    };
+  }
+
+  if (isCheckoutRequest(message)) {
+    const result = await executeTool('startCheckout', {}, context);
+    return { text: 'Your cart is validated. Opening checkout now.', products: [], pendingOrder: result, action: result.action };
+  }
+
+  if (isClearCartRequest(message)) {
+    const result = await executeTool('clearCart', {}, context);
+    return { text: result.verified ? 'Done — your cart has been cleared.' : 'I could not verify that the cart was cleared.', products: [], pendingOrder: null, cart: result.cart };
+  }
+
+  if (isRemoveCartRequest(message) || isUpdateCartRequest(message)) {
+    const target = await resolveCartMutationTarget({ message, context });
+    const productId = target?.productId?._id?.toString?.() || target?.productId?.toString?.() || target?.id;
+    if (!productId) return { text: 'Which cart item would you like me to change?', products: [], pendingOrder: null };
+    if (isRemoveCartRequest(message)) {
+      const result = await executeTool('removeFromCart', { productId }, context);
+      return { text: result.verified ? `Done — ${target.productId?.name || target.name || 'that item'} was removed from your cart.` : 'I could not verify that item was removed.', products: [], pendingOrder: null, cart: result.cart };
+    }
+    const quantity = requestedCartQuantity(message);
+    if (!quantity) return { text: 'What quantity should I set?', products: [], pendingOrder: null };
+    const result = await executeTool('updateCart', { productId, quantity }, context);
+    return { text: result.verified ? `Done — ${target.productId?.name || target.name || 'that item'} quantity is now ${quantity}.` : 'I could not verify the quantity update.', products: [], pendingOrder: null, cart: result.cart };
+  }
+
+  if (isComparisonRequest(message)) {
+    const comparison = await compareFromContext({ message, history, context });
+    if (comparison) return { ...comparison, pendingOrder: null };
+  }
+
+  const combinedIntent = await resolveCombinedShoppingIntent({ message, history, context });
   if (combinedIntent) {
     return combinedIntent;
   }
@@ -955,6 +1076,8 @@ const runAgent = async ({ message, history = [], context }) => {
   }
   const previousProduct = [...history].reverse().find((item) => item.metadata?.products?.length)?.metadata.products[0];
   let preExecutedTool = false;
+  let action = null;
+  let cart = null;
   if (requiredTool === 'checkInventory') {
     const previousProduct = [...history].reverse().find((item) => item.metadata?.products?.length)?.metadata.products[0];
     if (previousProduct?.id) {
@@ -991,7 +1114,7 @@ const runAgent = async ({ message, history = [], context }) => {
     messages.push(assistant);
     if (!assistant.tool_calls?.length) {
       console.log('[Agent] Sending final response');
-      return { text: assistant.content || 'I could not find an answer for that request.', products, pendingOrder: context.pendingOrder, selectedProductId: getProductId(previousProduct || currentProduct || context.currentProduct) };
+      return { text: assistant.content || 'I could not find an answer for that request.', products, pendingOrder: context.pendingOrder, selectedProductId: getProductId(previousProduct || currentProduct || context.currentProduct), action, cart };
     }
     for (const call of assistant.tool_calls) {
       console.log(`[Agent] Tool requested: ${call.function.name}`);
@@ -999,6 +1122,9 @@ const runAgent = async ({ message, history = [], context }) => {
       try {
         console.log(`[Agent] Executing ${call.function.name}`);
         result = await executeTool(call.function.name, JSON.parse(call.function.arguments || '{}'), context);
+        if (result.action) action = result.action;
+        if (result.cart) cart = result.cart;
+        if (result.state || result.orderPreview?.state) context.pendingOrder = result.orderPreview || result;
         if (call.function.name === 'updateCustomerProfile' && context.pendingOrder?.productId) {
           result.orderPreview = await executeTool('prepareOrder', { productId: context.pendingOrder.productId, quantity: context.pendingOrder.quantity || 1 }, context);
           context.pendingOrder = result.orderPreview;

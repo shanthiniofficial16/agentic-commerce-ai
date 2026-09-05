@@ -20,8 +20,12 @@ const recommendCheckoutProduct = async (req, res) => {
     if (!cart?.items?.length) return res.json({ success: true, data: { recommendation: null } });
 
     const cartProductIds = cart.items.map((item) => item.productId.toString());
-    const selectedItem = [...cart.items].sort((left, right) => Number(right.price || 0) - Number(left.price || 0))[0];
-    const mainProduct = await Product.findOne({ _id: selectedItem.productId, merchantId, active: true }).lean();
+    const cartProducts = await Product.find({ _id: { $in: cartProductIds }, merchantId, active: true }).lean();
+    const currentProducts = new Map(cartProducts.map((product) => [product._id.toString(), product]));
+    const mainProduct = [...cart.items]
+      .map((item) => currentProducts.get(item.productId.toString()))
+      .filter(Boolean)
+      .sort((left, right) => Number(right.price || 0) - Number(left.price || 0))[0];
     if (!mainProduct) return res.json({ success: true, data: { recommendation: null } });
 
     const candidates = await Product.find({
@@ -30,8 +34,18 @@ const recommendCheckoutProduct = async (req, res) => {
       stock: { $gt: 0 },
       _id: { $nin: cartProductIds },
     }).limit(100).lean();
-    const recommendation = buildCrossSellRecommendationSet({ product: mainProduct, products: candidates, maxItems: 1 })[0] || null;
-    return res.json({ success: true, data: { recommendation, basedOn: { productId: mainProduct._id.toString(), productName: mainProduct.name } } });
+    const recommendation = buildCrossSellRecommendationSet({
+      product: mainProduct,
+      products: candidates,
+      cartProducts,
+      maxItems: 1,
+      maximumPriceOverride: Math.max(Number(mainProduct.price || 0) * 0.15, 2000),
+    })[0] || null;
+    const recommendations = recommendation ? [{
+      ...recommendation,
+      basedOn: { productId: mainProduct._id.toString(), productName: mainProduct.name },
+    }] : [];
+    return res.json({ success: true, data: { recommendation, recommendations } });
   } catch (error) {
     const safe = sanitizeErrorPayload(error, 'Checkout recommendations are unavailable right now.');
     return res.status(error.status || 500).json({ success: false, error: { code: error.code || 'RECOMMENDATION_FAILED', message: safe.message } });

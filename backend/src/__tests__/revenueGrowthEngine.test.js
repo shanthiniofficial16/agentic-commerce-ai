@@ -76,6 +76,19 @@ describe('revenue growth engine', () => {
     expect(recommendation.product.name).toBe('PixelDesk Pro 15');
   });
 
+  test('filters out higher-priced laptops that do not meet explicit RAM requirements', () => {
+    const recommendation = getLaptopRecommendation({
+      products: [
+        { ...laptops[0], price: 65000, specifications: { ...laptops[0].specifications, ram: '8 GB' } },
+        { ...laptops[1], price: 60000, specifications: { ...laptops[1].specifications, ram: '16 GB' } },
+      ],
+      message: 'I need a laptop under ₹70,000 with 16GB RAM',
+    });
+
+    expect(recommendation.product.price).toBe(60000);
+    expect(recommendation.summary).toContain('16 GB');
+  });
+
   test('returns a no-match response when no suitable laptop is available', () => {
     const recommendation = getLaptopRecommendation({
       products: [{ ...laptops[0], price: 120000, stock: 0, active: false }],

@@ -64,21 +64,14 @@ export function Assistant({ onAdd, onNotify, onCartChange }) {
       const result = await sendAgentMessage(text, sessionId || undefined, undefined, contextProduct?._id)
       const nextSessionId = result?.sessionId || sessionId || undefined
       if (nextSessionId) setSessionId(nextSessionId)
+      if (result?.action?.path) navigate(result.action.type === 'PROCEED_TO_PAYMENT' ? `${result.action.path}?autopay=1` : result.action.path)
+      if (result?.cart) onCartChange?.(result.cart)
+      else getCart().then((updatedCart) => onCartChange?.(updatedCart)).catch(() => {})
 
       const isCheckoutStage = Boolean(result?.orderPreview || result?.pendingConfirmation)
       setOrderPreview(result?.orderPreview || null)
       const nextCrossSell = Array.isArray(result?.crossSell) ? result.crossSell : []
       setCrossSellItems(isCheckoutStage ? nextCrossSell : [])
-      if (isCheckoutStage && nextCrossSell.length && selectedCrossSell?.id !== (nextCrossSell[0].id || nextCrossSell[0]._id)) {
-        const updatedCart = await addToCart(nextCrossSell[0].id || nextCrossSell[0]._id, 1, 'ai_cross_sell')
-        onCartChange?.(updatedCart)
-        setOrderPreview((preview) => {
-          if (!preview) return preview
-          const items = mergeOrderItems(preview.items || [{ ...preview.product, productId: preview.product.id, quantity: preview.quantity }], updatedCart.items)
-          return { ...preview, items, total: orderItemsTotal(items) }
-        })
-        setSelectedCrossSell({ id: nextCrossSell[0].id || nextCrossSell[0]._id, merchantId: updatedCart.merchantId })
-      }
       setCrossSellMessage(isCheckoutStage && nextCrossSell.length ? <><span>COMPLETE YOUR SETUP</span><button className="button outline cross-sell-skip" onClick={skipCrossSell}>Skip</button></> : '')
       setMessages((items) => [...items, {
         role: 'agent',
@@ -185,7 +178,7 @@ export function Assistant({ onAdd, onNotify, onCartChange }) {
     return <section className="agent-page"><div className="agent-header"><button className="back-link agent-back" onClick={() => navigate(-1)}><ArrowRight size={16} /> Back to Store</button><div><p className="eyebrow"><Bot size={14} /> AI shopping assistant</p><h1>Find your next favourite.</h1></div><span className="agent-status"><i /> Online / Ready</span></div><div className="agent-layout"><div className="agent-intro"><span className="assistant-avatar"><Bot size={28} /></span><p className="eyebrow">Personal shopping intelligence</p><h2>Ask. Discover.<br /><em>Buy better.</em></h2><p className="muted">Search the live catalogue, compare products, check stock, or manage your cart.</p>{contextProduct && <div className="agent-context"><small>Currently viewing</small><strong>{contextProduct.name}</strong><span>{money(contextProduct.price)}</span></div>}</div><div className="chat-window agent-chat"><div className="chat-messages">{messages.map((message, index) => <div className={`message ${message.role}`} key={`${index}-${message.text}`}><span>{message.role === 'agent' ? <Bot size={15} /> : 'You'}</span><p>{message.text}</p>{message.products?.length > 0 && <div className="chat-products">{message.products.map((product) => <article className="chat-product" key={product.id}><img src={imageFor(product)} alt={product.name} /><div><Link to={`/shop/products/${product.id}`}><strong>{product.name}</strong></Link><p>{money(product.price)}</p><button className="add-button" onClick={() => onAdd({ ...product, _id: product.id })}>Add to cart</button></div></article>)}</div>}</div>)}{!orderPreview && crossSellItems.length > 0 && <div className="cross-sell-panel"><div className="cross-sell-header">{crossSellMessage || 'Recommended for your laptop'}</div><div className="cross-sell-grid">{crossSellItems.map((item) => <article className="cross-sell-card" key={item.id || item._id}><img src={imageFor(item)} alt={item.name} /><div className="cross-sell-card-body"><h4>{item.name}</h4><p className="cross-sell-price">{money(item.price)}</p><p className="cross-sell-benefit">{item.benefit || item.reason || 'Useful for everyday productivity.'}</p><button className="add-button" onClick={() => handleCrossSellAdd(item)} disabled={busy}>Add to cart</button></div></article>)}</div></div>}{orderPreview && <div className="confirmation-shelf"><div className="confirmation-product-card"><div className="confirmation-product-head">Recommended item</div><div className="confirmation-product-inner"><img src={imageFor(orderPreview.product || { name: 'Selected item', category: 'Electronics' })} alt={orderPreview.product?.name || 'Selected item'} /><div className="confirmation-product-copy"><h4>{orderPreview.product?.name || 'Selected item'}</h4><p className="cross-sell-price">{money(orderPreview.product?.price || orderPreview.total || 0)}</p><p className="cross-sell-benefit">Delivery: {orderPreview.profile?.fullName || 'Customer'} · {orderPreview.profile?.address || 'Address on file'}</p></div></div></div>{crossSellItems.length > 0 && <div className="cross-sell-panel confirmation-cross-sell"><div className="cross-sell-header">{crossSellMessage || 'Recommended for your laptop'}</div><div className="cross-sell-grid">{crossSellItems.map((item) => <article className="cross-sell-card" key={item.id || item._id}><img src={imageFor(item)} alt={item.name} /><div className="cross-sell-card-body"><h4>{item.name}</h4><p className="cross-sell-price">{money(item.price)}</p><p className="cross-sell-benefit">{item.benefit || item.reason || 'Useful for everyday productivity.'}</p><button className="add-button" onClick={() => handleCrossSellAdd(item)} disabled={busy}>Add to cart</button></div></article>)}</div></div>}</div>}{orderPreview && <div className="order-preview"><strong>Order Summary</strong>{(orderPreview.items || [{ ...orderPreview.product, productId: orderPreview.product.id, quantity: orderPreview.quantity }]).map((item) => <span key={orderItemId(item)}>{item.productName || item.name || item.productId?.name || 'Product'} × {item.quantity} · {money(cartItemPrice(item) * Number(item.quantity || 0))}</span>)}<span>Delivery: {orderPreview.profile.fullName}</span><span>{orderPreview.profile.address}, {orderPreview.profile.city}</span><b>Total: {money(orderItemsTotal(orderPreview.items || [{ ...orderPreview.product, productId: orderPreview.product.id, quantity: orderPreview.quantity }]))}</b><button className="button primary" onClick={placeOrder} disabled={busy}>Place Order</button><button className="button outline" onClick={cancelOrder} disabled={busy}>Cancel</button></div>}{busy && <div className="message agent typing"><span><Bot size={15} /></span><p>Thinking<span className="typing-dots">...</span></p></div>}</div><div className="suggestions">{['Find a laptop under ₹70,000', 'Show me the best headphones', 'What can you help me with?'].map((suggestion) => <button key={suggestion} onClick={() => setInput(suggestion)}>{suggestion}</button>)}</div><form className="chat-form" onSubmit={send}><input value={input} onChange={(event) => setInput(event.target.value)} placeholder="Ask anything about products..." disabled={busy} /><button className="button primary" aria-label="Send" disabled={busy}><ArrowRight size={18} /></button></form></div></div></section>
 }
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { ArrowRight, Bot, Check, ChevronDown, Heart, Minus, Plus, Search, ShoppingBag, Sparkles, Star, Trash2, Truck, X } from 'lucide-react'
 import { addToCart, cancelAgentOrder, confirmAgentOrder, createRazorpayOrder, getCart, getCheckoutRecommendation, getOrders, getProduct, getProducts, getUserProfile, removeFromCart, sendAgentMessage, updateCartItem, verifyRazorpayPayment } from '../services/api'
 import '../Agent.css'
@@ -270,16 +263,37 @@ const loadRazorpayScript = () => new Promise((resolve, reject) => {
 
 export function Checkout({ cart, onCartChange }) {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const [checkoutCart, setCheckoutCart] = useState(cart)
   const [step, setStep] = useState(1)
   const [done, setDone] = useState(false)
   const [processing, setProcessing] = useState(false)
   const [error, setError] = useState('')
-  const [recommendation, setRecommendation] = useState(null)
+  const [recommendations, setRecommendations] = useState([])
   const [recommendationChecked, setRecommendationChecked] = useState(false)
   const [profile, setProfile] = useState({ fullName: '', email: '', phone: '' })
+  const [autoPaymentStarted, setAutoPaymentStarted] = useState(false)
 
   useEffect(() => { setCheckoutCart(cart) }, [cart])
+
+  useEffect(() => {
+    if (!cart?.merchantId || !cart.items?.length || recommendationChecked) return
+    let active = true
+    setProcessing(true)
+    getCheckoutRecommendation(cart.merchantId)
+      .then((result) => {
+        if (!active) return
+        setRecommendations(Array.isArray(result.recommendations) ? result.recommendations : result.recommendation ? [result.recommendation] : [])
+        setRecommendationChecked(true)
+      })
+      .catch(() => {
+        if (active) setRecommendationChecked(true)
+      })
+      .finally(() => {
+        if (active) setProcessing(false)
+      })
+    return () => { active = false }
+  }, [cart, recommendationChecked])
 
   useEffect(() => {
     let active = true
@@ -304,14 +318,6 @@ export function Checkout({ cart, onCartChange }) {
     setProcessing(true)
 
     try {
-      if (!recommendationChecked) {
-        const result = await getCheckoutRecommendation(checkoutCart.merchantId)
-        setRecommendation(result.recommendation || null)
-        setRecommendationChecked(true)
-        setProcessing(false)
-        return
-      }
-
       await loadRazorpayScript()
       const response = await createRazorpayOrder(checkoutCart.merchantId)
       const payload = response?.data
@@ -381,7 +387,13 @@ export function Checkout({ cart, onCartChange }) {
     }
   }
 
-  const acceptRecommendation = async () => {
+  useEffect(() => {
+    if (searchParams.get('autopay') !== '1' || autoPaymentStarted || !checkoutCart?.items?.length || processing) return
+    setAutoPaymentStarted(true)
+    handleCheckout()
+  }, [searchParams, checkoutCart, autoPaymentStarted, processing])
+
+  const acceptRecommendation = async (recommendation) => {
     if (!recommendation) return
     setProcessing(true)
     setError('')
@@ -389,13 +401,15 @@ export function Checkout({ cart, onCartChange }) {
       const updatedCart = await addToCart(recommendation.id, 1, 'ai_cross_sell')
       setCheckoutCart(updatedCart)
       onCartChange?.(updatedCart)
-      setRecommendation(null)
+      setRecommendations((items) => items.filter((item) => item.id !== recommendation.id))
     } catch (err) {
       setError(err.response?.data?.error?.message || 'Could not add the recommendation to your cart.')
     } finally {
       setProcessing(false)
     }
   }
+
+  const checkoutItemsTotal = cartItemsSubtotal(checkoutCart?.items || [])
 
   if (done) {
     return (
@@ -484,12 +498,12 @@ export function Checkout({ cart, onCartChange }) {
             const price = Number(item.price || product.price || 0)
             return <div className="line" key={productId}><span>{product.name || item.productName || 'Product'} × {item.quantity}</span><strong>{money(price * Number(item.quantity || 0))}</strong></div>
           })}
-          <div className="line"><span>Subtotal</span><strong>{money(checkoutCart?.subtotal || checkoutCart?.total || 0)}</strong></div>
+          <div className="line"><span>Subtotal</span><strong>{money(checkoutItemsTotal)}</strong></div>
           <div className="line"><span>Shipping</span><strong>Free</strong></div>
-          <div className="line total"><span>Total</span><strong>{money(checkoutCart?.total || 0)}</strong></div>
+          <div className="line total"><span>Total</span><strong>{money(checkoutItemsTotal)}</strong></div>
         </div>
 
-        {recommendation && <div className="cross-sell-panel"><div className="cross-sell-header"><span>Recommended for your order</span></div><div className="cross-sell-grid"><article className="cross-sell-card"><img src={imageFor(recommendation)} alt={recommendation.name} /><div className="cross-sell-card-body"><h4>{recommendation.name}</h4><p className="cross-sell-price">{money(recommendation.price)}</p><p className="cross-sell-benefit">{recommendation.benefit || recommendation.reason || 'A useful addition to your order.'}</p><button className="button primary" onClick={acceptRecommendation} disabled={processing}>Add to cart</button><button className="button outline" onClick={() => setRecommendation(null)} disabled={processing}>Continue without it</button></div></article></div></div>}
+        {recommendations.length > 0 && <div className="cross-sell-panel"><div className="cross-sell-header"><span>Recommended additions for your order</span><button className="button outline cross-sell-skip" onClick={() => setRecommendations([])} disabled={processing}>Skip</button></div><div className="cross-sell-grid">{recommendations.map((recommendation) => <article className="cross-sell-card" key={recommendation.id}><img src={imageFor(recommendation)} alt={recommendation.name} /><div className="cross-sell-card-body"><small>For {recommendation.basedOn?.productName || 'your cart item'}</small><h4>{recommendation.name}</h4><p className="cross-sell-price">{money(recommendation.price)}</p><p className="cross-sell-benefit">{recommendation.benefit || recommendation.reason || 'A useful addition to your order.'}</p><button className="button primary" onClick={() => acceptRecommendation(recommendation)} disabled={processing}>Add to cart</button><button className="button outline" onClick={() => setRecommendations((items) => items.filter((item) => item.id !== recommendation.id))} disabled={processing}>Skip</button></div></article>)}</div></div>}
 
         {error && <div className="notice error-state" style={{ marginTop: '18px' }}>{error}</div>}
 
@@ -498,7 +512,7 @@ export function Checkout({ cart, onCartChange }) {
             <button className="button primary" onClick={() => setStep(step + 1)}>Continue</button>
           ) : (
             <button className="button primary" onClick={handleCheckout} disabled={processing}>
-              {processing ? 'Processing...' : recommendation ? 'Choose an option above' : 'Proceed to secure payment'}
+              {processing ? 'Processing...' : recommendations.length ? 'Review recommendations above' : 'Proceed to secure payment'}
             </button>
           )}
         </div>

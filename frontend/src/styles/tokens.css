@@ -1,0 +1,65 @@
+:root {
+  --color-paper: #f5f0e7;
+  --color-paper-soft: #fbfaf7;
+  --color-surface: #fffdf9;
+  --color-surface-muted: #f1f5f0;
+  --color-ink: #17231d;
+  --color-ink-soft: #405047;
+  --color-muted: #68766e;
+  --color-faint: #94a099;
+  --color-green-900: #123d2d;
+  --color-green-700: #1f6b4b;
+  --color-green-600: #2f805b;
+  --color-green-100: #e7f3eb;
+  --color-orange: #e88a5d;
+  --color-orange-soft: #fdf0e8;
+  --color-line: #dfe7df;
+  --color-line-strong: #c9d8cd;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 22px;
+  --shadow-xs: 0 2px 8px rgba(18, 40, 31, .04);
+  --shadow-sm: 0 8px 20px rgba(18, 40, 31, .07);
+  --shadow-md: 0 18px 42px rgba(17, 35, 29, .09);
+  --ease-standard: cubic-bezier(.2, .7, .2, 1);
+  --duration-fast: 160ms;
+  --duration-standard: 240ms;
+}
+
+:where(button, a, input, select, textarea):focus-visible {
+  outline: 3px solid rgba(31, 107, 75, .22);
+  outline-offset: 2px;
+}
+
+:where(.button, .add-button, .login-submit) {
+  transition: transform var(--duration-fast) var(--ease-standard), background-color var(--duration-standard) var(--ease-standard), border-color var(--duration-standard) var(--ease-standard), box-shadow var(--duration-standard) var(--ease-standard);
+}
+
+:where(.button, .add-button, .login-submit):hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+:where(.button, .add-button, .login-submit):active:not(:disabled) {
+  transform: translateY(0);
+}
+
+:where(.notice, .empty-state, .merchant-empty) {
+  border-color: var(--color-line-strong);
+  background: color-mix(in srgb, var(--color-surface) 82%, var(--color-green-100));
+  color: var(--color-ink-soft);
+}
+
+:where(.skeleton, .merchant-loading > *) {
+  background: linear-gradient(100deg, #e8eee8 30%, #f6f8f4 50%, #e8eee8 70%);
+  background-size: 200% 100%;
+  animation: shared-shimmer 1.35s linear infinite;
+}
+
+@keyframes shared-shimmer {
+  to { background-position: -200% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :where(.skeleton, .merchant-loading > *) { animation: none; }
+}

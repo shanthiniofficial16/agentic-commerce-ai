@@ -5,7 +5,7 @@ const getCart = async (req, res) => {
   try {
     const { merchantId } = req.query;
     
-    let query = { userId: req.userId };
+    let query = { userId: req.userId, status: 'ACTIVE' };
     if (merchantId) {
       query.merchantId = merchantId;
     }
@@ -105,7 +105,7 @@ const addToCart = async (req, res) => {
     }
 
     // Get or create cart
-    let cart = await Cart.findOne({ userId: req.userId, merchantId: product.merchantId });
+    let cart = await Cart.findOne({ userId: req.userId, merchantId: product.merchantId, status: 'ACTIVE' });
     if (!cart) {
       cart = new Cart({
         userId: req.userId,
@@ -164,7 +164,7 @@ const removeFromCart = async (req, res) => {
       });
     }
 
-    const cart = await Cart.findOne({ userId: req.userId, merchantId });
+    const cart = await Cart.findOne({ userId: req.userId, merchantId, status: 'ACTIVE' });
     if (!cart) {
       return res.status(404).json({
         success: false,
@@ -223,7 +223,7 @@ const updateCartItem = async (req, res) => {
       });
     }
 
-    const cart = await Cart.findOne({ userId: req.userId, merchantId });
+    const cart = await Cart.findOne({ userId: req.userId, merchantId, status: 'ACTIVE' });
     if (!cart) {
       return res.status(404).json({
         success: false,

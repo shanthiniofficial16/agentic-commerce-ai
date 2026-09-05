@@ -59,6 +59,33 @@ const parseStorageValue = (value) => {
   return unit === 'tb' ? amount * 1024 : amount;
 };
 
+const getRequestedRequirements = (message = '') => {
+  const text = String(message).toLowerCase();
+  const ram = text.match(/(?:with|having|minimum|min)\s*(\d+)\s*gb\s*ram|\b(\d+)\s*gb\s*ram/);
+  const generation = text.match(/\b(\d+)(?:st|nd|rd|th)?\s*gen\b/);
+  const processor = text.match(/\b(?:intel\s+)?(i[3579]|ryzen\s*[3579]|m[123])\b/);
+  const storage = text.match(/\b(\d+)\s*(tb|gb)\s*(?:ssd|hdd|storage)?\b/);
+  const requiresSsd = /\bssd\b/.test(text);
+  return {
+    ram: Number(ram?.[1] || ram?.[2] || 0),
+    generation: Number(generation?.[1] || 0),
+    processor: processor?.[1]?.replace(/\s+/g, '') || null,
+    storage: storage ? Number(storage[1]) * (storage[2] === 'tb' ? 1024 : 1) : 0,
+    requiresSsd,
+  };
+};
+
+const satisfiesRequestedRequirements = (product, requirements) => {
+  const specs = getRealSpecs(product);
+  const productText = `${specs.processor || ''} ${specs.storage || ''} ${product.description || ''} ${(product.keyFeatures || []).join(' ')}`.toLowerCase();
+  if (requirements.ram && parseRamValue(specs.ram) < requirements.ram) return false;
+  if (requirements.generation && parseGenValue(specs.generation) < requirements.generation) return false;
+  if (requirements.processor && !productText.replace(/\s+/g, '').includes(requirements.processor)) return false;
+  if (requirements.storage && parseStorageValue(specs.storage) < requirements.storage) return false;
+  if (requirements.requiresSsd && !/\bssd\b/i.test(String(specs.storage || '')) && !/\bssd\b/i.test(productText)) return false;
+  return true;
+};
+
 const rankProducts = ({ products = [], userMessage = '', categoryHint = null }) => {
   const message = String(userMessage || '').toLowerCase();
   const category = categoryHint || (message.includes('laptop') ? 'Laptops' : null);
@@ -76,9 +103,11 @@ const rankProducts = ({ products = [], userMessage = '', categoryHint = null }) 
     if (match) return Number(String(match[1]).replace(/,/g, ''));
     return null;
   })();
+  const requirements = getRequestedRequirements(message);
 
   let ranked = [...validProducts];
   if (maxBudget != null) ranked = ranked.filter((item) => Number(item.price) <= Number(maxBudget));
+  ranked = ranked.filter((item) => satisfiesRequestedRequirements(item, requirements));
 
   ranked = ranked.map((product) => {
     const specs = getRealSpecs(product);
@@ -161,6 +190,14 @@ const RELATIONSHIP_KEYWORDS = {
   phone: ['phone', 'case', 'charger', 'power', 'bank', 'earbud', 'screen', 'protector', 'cable'],
   camera: ['camera', 'bag', 'memory', 'card', 'tripod', 'battery', 'strap', 'lens', 'case'],
   headphones: ['headphone', 'case', 'adapter', 'stand', 'cable', 'earbud', 'audio'],
+  saree: ['saree', 'jewelry', 'jewellery', 'earring', 'necklace', 'bracelet', 'ring', 'blouse', 'clutch'],
+  accessories: ['accessory', 'mouse', 'keyboard', 'hub', 'organizer', 'bag', 'sleeve', 'pouch', 'stand', 'travel'],
+  books: ['book', 'reading', 'learning', 'fiction', 'business'],
+  sports: ['sports', 'running', 'fitness', 'outdoor', 'training', 'yoga'],
+  grocery: ['grocery', 'snack', 'beverage', 'pantry', 'coffee', 'food'],
+  beauty: ['beauty', 'makeup', 'haircare', 'skincare', 'serum', 'colour'],
+  home: ['home', 'kitchen', 'appliance', 'decor', 'lamp'],
+  fashion: ['fashion', 'clothing', 'outerwear', 'shoes', 'shirt', 'dress'],
 };
 
 const normalizeTokens = (value = '') => String(value || '')
@@ -199,6 +236,14 @@ const detectProductFamily = (product = {}) => {
   if (/(phone|smartphone|mobile)/i.test(text)) return 'phone';
   if (/(camera|dslr|mirrorless)/i.test(text)) return 'camera';
   if (/(headphone|earphone|earbuds|audio)/i.test(text)) return 'headphones';
+  if (/(saree|sari|dress|ethnic|fashion)/i.test(text)) return 'saree';
+  if (/accessor(y|ies)|keyboard|mouse|hub|organizer|backpack|sleeve|pouch|bag/i.test(text)) return 'accessories';
+  if (/book|fiction|learning|business/i.test(text)) return 'books';
+  if (/sports|running|fitness|outdoor|yoga/i.test(text)) return 'sports';
+  if (/grocery|snack|beverage|pantry|coffee/i.test(text)) return 'grocery';
+  if (/beauty|makeup|haircare|skincare/i.test(text)) return 'beauty';
+  if (/home|kitchen|appliance|decor|lamp/i.test(text)) return 'home';
+  if (/fashion|clothing|outerwear|shoes|shirt/i.test(text)) return 'fashion';
   return null;
 };
 
@@ -230,6 +275,16 @@ const getRelationshipPriority = ({ selectedFamily, candidate }) => {
     return 60;
   }
 
+  if (selectedFamily === 'saree') {
+    if (/jewelry|jewellery|earring|necklace|bracelet|ring/i.test(candidateText)) return 100;
+    if (/blouse|clutch|fashion/i.test(candidateText)) return 90;
+  }
+
+  if (['accessories', 'books', 'sports', 'grocery', 'beauty', 'home', 'fashion'].includes(selectedFamily)) {
+    if (candidateText.includes(selectedFamily) || candidateText.split(/\s+/).some((token) => RELATIONSHIP_KEYWORDS[selectedFamily].includes(token))) return 80;
+    return 60;
+  }
+
   return 50;
 };
 
@@ -251,6 +306,14 @@ const getRelationshipPriorityByName = ({ selectedFamily, candidate }) => {
   }
   if (selectedFamily === 'headphones') {
     if (/case|adapter|stand|cable/i.test(text)) return 100;
+  }
+  if (selectedFamily === 'saree') {
+    if (/jewelry|jewellery|earring|necklace|bracelet|ring/i.test(text)) return 100;
+    if (/blouse|clutch|fashion/i.test(text)) return 90;
+  }
+
+  if (['accessories', 'books', 'sports', 'grocery', 'beauty', 'home', 'fashion'].includes(selectedFamily)) {
+    if (candidate.category?.toLowerCase() === selectedFamily || candidate.subcategory?.toLowerCase() === selectedFamily) return 15;
   }
   return 60;
 };
@@ -277,6 +340,15 @@ const getRelationshipReason = ({ selectedFamily, candidate }) => {
 
   if (selectedFamily === 'headphones') {
     if (/case|adapter|stand|cable/i.test(candidateText)) return 'Complements your headphones with better portability and connectivity.';
+  }
+
+  if (selectedFamily === 'saree') {
+    if (/jewelry|jewellery|earring|necklace|bracelet|ring/i.test(candidateText)) return 'Complements the saree with a coordinated finishing detail.';
+    if (/blouse|clutch/i.test(candidateText)) return 'Complements the saree for a more complete occasion-ready outfit.';
+  }
+
+  if (['accessories', 'books', 'sports', 'grocery', 'beauty', 'home', 'fashion'].includes(selectedFamily)) {
+    return 'Pairs naturally with your selected item for a more complete order.';
   }
 
   return 'Pairs well with your selected product for everyday use.';
@@ -315,8 +387,11 @@ const isRelevantCrossSellCandidate = ({ selected, candidate }) => {
   const directMatch = requiredKeywords.some((keyword) => candidateTokens.has(keyword));
   const selectedNameTokens = new Set(normalizeTokens(selected.name));
   const sharedFamilyToken = [...selectedNameTokens].some((token) => candidateTokens.has(token) && (token === 'laptop' || token === 'phone' || token === 'camera' || token === 'headphone' || token === 'earbuds'));
+  const sameCatalogGroup = ['accessories', 'books', 'sports', 'grocery', 'beauty', 'home', 'fashion'].includes(selectedFamily)
+    && (normalizeText(candidate.category) === normalizeText(selected.category)
+      || normalizeText(candidate.subcategory) === normalizeText(selected.subcategory));
 
-  if (!directMatch && !sharedFamilyToken) {
+  if (!directMatch && !sharedFamilyToken && !sameCatalogGroup) {
     const candidateRelated = Array.isArray(candidate.relatedProducts) || Array.isArray(candidate.aiMetadata?.complementaryProductIds);
     const directReference = candidateRelated && [candidate.relatedProducts, candidate.aiMetadata?.complementaryProductIds].flat().some((id) => String(id) === String(selected._id || selected.id));
     if (!directReference) return false;
@@ -325,11 +400,14 @@ const isRelevantCrossSellCandidate = ({ selected, candidate }) => {
   return true;
 };
 
-const buildCrossSellRecommendationSet = ({ product, products = [], maxItems = 3 }) => {
+const buildCrossSellRecommendationSet = ({ product, products = [], cartProducts = [], maxItems = 3, maximumPriceOverride = null }) => {
   if (!product || !Array.isArray(products) || !products.length) return [];
 
   const selectedFamily = detectProductFamily(product);
-  const maximumPrice = Number(product.price || 0) * 0.15;
+  const maximumPrice = maximumPriceOverride == null
+    ? Number(product.price || 0) * 0.15
+    : Number(maximumPriceOverride);
+  const contextProducts = [product, ...(Array.isArray(cartProducts) ? cartProducts : [])];
 
   const ranked = products
     .filter((item) => item
@@ -338,7 +416,10 @@ const buildCrossSellRecommendationSet = ({ product, products = [], maxItems = 3 
     .map((item) => {
       const relevanceScore = getCompatibilityScore({ selected: product, candidate: item });
       const relationshipPriority = getRelationshipPriorityByName({ selectedFamily, candidate: item });
-      const compatibilityScore = relevanceScore + relationshipPriority;
+      const cartContextScore = contextProducts
+        .filter((cartProduct) => String(cartProduct?._id || cartProduct?.id) !== String(product._id || product.id))
+        .reduce((score, cartProduct) => score + Math.min(getCompatibilityScore({ selected: cartProduct, candidate: item }), 30), 0);
+      const compatibilityScore = relevanceScore + relationshipPriority + cartContextScore;
       const priceDifference = Math.abs(Number(item.price || 0) - maximumPrice);
       const reason = getRelationshipReason({ selectedFamily, candidate: item });
       const benefit = reason;

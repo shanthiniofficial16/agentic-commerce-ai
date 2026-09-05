@@ -199,9 +199,20 @@ const chat = async (req, res) => {
       const recommendation = conversation.pendingRecommendation;
       conversation.pendingRecommendation = undefined;
       if (confirmationDecision === 'cancel') {
+        let originalProduct = null;
+        let cartResult = null;
+        if (recommendation.originalProductId) {
+          const actionContext = { userId: req.userId, merchantId: conversation.merchantId };
+          const original = await executeTool('getProductDetails', { productId: recommendation.originalProductId }, actionContext);
+          cartResult = await executeTool('addToCart', { productId: recommendation.originalProductId, quantity: 1 }, actionContext);
+          if (!cartResult.verified) {
+            throw Object.assign(new Error('I could not verify that the requested product was added to your cart'), { code: 'CART_VERIFICATION_FAILED', status: 502 });
+          }
+          originalProduct = original.product;
+        }
         await AgentAction.create({ sessionId: conversation.sessionId, userId: req.userId, merchantId: conversation.merchantId, action: 'CROSS_SELL_REJECTED', input: { productId: recommendation.productId }, status: 'SUCCESS' });
         await conversation.save();
-        return res.json({ success: true, data: { message: 'No problem. I kept your cart unchanged.', sessionId: conversation.sessionId, recommendationDeclined: true } });
+        return res.json({ success: true, data: { message: originalProduct ? `No problem. I skipped the recommendation and added ${originalProduct.name} to your cart.` : 'No problem. I skipped the recommendation and kept your cart unchanged.', products: originalProduct ? [originalProduct] : [], cart: cartResult?.cart || null, sessionId: conversation.sessionId, recommendationDeclined: true } });
       }
       const cartResult = await executeTool('addToCart', { productId: recommendation.productId, quantity: 1, source: 'ai_cross_sell' }, { userId: req.userId, merchantId: conversation.merchantId });
       await AgentAction.create({ sessionId: conversation.sessionId, userId: req.userId, merchantId: conversation.merchantId, action: 'CROSS_SELL_ACCEPTED', input: { productId: recommendation.productId }, output: { productId: cartResult.product.id, price: cartResult.product.price }, status: 'SUCCESS', amount: cartResult.product.price });
@@ -284,6 +295,8 @@ const chat = async (req, res) => {
         orderPreview: isPendingConfirmationState(result.pendingOrder?.state) ? { ...result.pendingOrder, state: 'PENDING_CONFIRMATION' } : null,
         profileRequired: result.pendingOrder?.state === 'PROFILE_REQUIRED' ? result.pendingOrder.requiredFields : null,
         viewOrderPath: result.viewOrderPath || null,
+        action: result.action || null,
+        cart: result.cart || null,
         sessionId: conversation.sessionId,
       },
     });
