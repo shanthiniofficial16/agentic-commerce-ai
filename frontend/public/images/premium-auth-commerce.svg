@@ -1,0 +1,106 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 1400" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <linearGradient id="wall" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#0b4038"/>
+      <stop offset=".6" stop-color="#164e47"/>
+      <stop offset="1" stop-color="#092d2d"/>
+    </linearGradient>
+    <linearGradient id="floor" x1="0" y1="0" x2="0" y2="1">
+      <stop stop-color="#dce8d7"/>
+      <stop offset="1" stop-color="#b7cdbd"/>
+    </linearGradient>
+    <linearGradient id="metal" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#f8ead2"/>
+      <stop offset=".45" stop-color="#c99d62"/>
+      <stop offset="1" stop-color="#75502e"/>
+    </linearGradient>
+    <linearGradient id="screen" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#d9f1e3"/>
+      <stop offset="1" stop-color="#78b9a1"/>
+    </linearGradient>
+    <filter id="soft" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="24"/>
+    </filter>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="180%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="16" result="blur"/>
+      <feOffset dy="18"/>
+      <feComponentTransfer><feFuncA type="linear" slope=".3"/></feComponentTransfer>
+      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <rect width="1200" height="1400" fill="url(#wall)"/>
+  <circle cx="950" cy="290" r="250" fill="#67c4a3" opacity=".18" filter="url(#soft)"/>
+  <circle cx="120" cy="860" r="220" fill="#e88a5d" opacity=".12" filter="url(#soft)"/>
+  <path d="M0 1010 Q330 920 630 1010 T1200 930 V1400H0Z" fill="url(#floor)"/>
+  <path d="M0 1120 Q390 1060 730 1120 T1200 1070" fill="none" stroke="#9ab9a5" stroke-width="3" opacity=".55"/>
+
+  <!-- architectural light -->
+  <path d="M100 0v510M360 0v510M620 0v510" stroke="#8ac9ab" stroke-width="8" opacity=".18"/>
+  <path d="M35 0v420M295 0v420M555 0v420" stroke="#d9f1df" stroke-width="2" opacity=".18"/>
+  <circle cx="230" cy="168" r="82" fill="#f6e8c9" opacity=".12"/>
+  <path d="M190 176h80" stroke="#f6e8c9" stroke-width="10" opacity=".45"/>
+
+  <!-- floating AI signal -->
+  <g fill="none" stroke="#a7e6c2" stroke-width="3" opacity=".7">
+    <path d="M770 220h155l110 120"/>
+    <path d="M820 520l145-180"/>
+    <path d="M765 220l55 300"/>
+  </g>
+  <g fill="#b9f0cb">
+    <circle cx="770" cy="220" r="9"/><circle cx="925" cy="220" r="9"/><circle cx="1035" cy="340" r="9"/><circle cx="820" cy="520" r="9"/><circle cx="965" cy="340" r="9"/>
+  </g>
+  <g transform="translate(845 170)">
+    <circle r="46" fill="#e8fff0" opacity=".12"/>
+    <path d="M0-24l7 17 18 7-18 7-7 18-7-18-18-7 18-7z" fill="#d9f5df"/>
+  </g>
+
+  <!-- laptop -->
+  <g transform="translate(100 610)" filter="url(#shadow)">
+    <rect x="0" y="0" width="570" height="350" rx="22" fill="#192c2b" stroke="#d7e5d6" stroke-width="8"/>
+    <rect x="25" y="25" width="520" height="300" rx="12" fill="url(#screen)"/>
+    <rect x="65" y="70" width="170" height="22" rx="11" fill="#1b6b59" opacity=".65"/>
+    <rect x="65" y="113" width="330" height="16" rx="8" fill="#e9fff0" opacity=".75"/>
+    <rect x="65" y="148" width="260" height="16" rx="8" fill="#e9fff0" opacity=".5"/>
+    <rect x="65" y="205" width="150" height="70" rx="14" fill="#fff8ec" opacity=".88"/>
+    <rect x="235" y="205" width="150" height="70" rx="14" fill="#2c866c" opacity=".9"/>
+    <circle cx="470" cy="105" r="32" fill="#f2a578" opacity=".95"/>
+    <path d="M230 360h110l54 45H176z" fill="#d5dfd4"/>
+    <rect x="20" y="399" width="550" height="20" rx="10" fill="#cbd8ca"/>
+  </g>
+
+  <!-- headphone set -->
+  <g transform="translate(780 560) rotate(12)" filter="url(#shadow)">
+    <path d="M20 150C20 20 270 20 270 150" fill="none" stroke="url(#metal)" stroke-width="34" stroke-linecap="round"/>
+    <rect x="0" y="125" width="70" height="140" rx="30" fill="#d9a466"/>
+    <rect x="220" y="125" width="70" height="140" rx="30" fill="#d9a466"/>
+    <rect x="17" y="145" width="36" height="96" rx="18" fill="#173e3a"/>
+    <rect x="237" y="145" width="36" height="96" rx="18" fill="#173e3a"/>
+  </g>
+
+  <!-- smartphone -->
+  <g transform="translate(730 890) rotate(-8)" filter="url(#shadow)">
+    <rect width="190" height="360" rx="28" fill="#102b2a" stroke="#e2eadc" stroke-width="7"/>
+    <rect x="16" y="38" width="158" height="280" rx="14" fill="url(#screen)"/>
+    <rect x="43" y="64" width="104" height="12" rx="6" fill="#1c6c59" opacity=".65"/>
+    <rect x="36" y="104" width="118" height="90" rx="12" fill="#fff8ee" opacity=".9"/>
+    <circle cx="127" cy="148" r="20" fill="#e88a5d"/>
+    <rect x="38" y="222" width="114" height="13" rx="6" fill="#fff" opacity=".7"/>
+    <rect x="38" y="250" width="76" height="13" rx="6" fill="#fff" opacity=".45"/>
+    <circle cx="95" cy="338" r="7" fill="#e1eadf"/>
+  </g>
+
+  <!-- product packages -->
+  <g transform="translate(130 1040)" filter="url(#shadow)">
+    <path d="M0 80l150-65 160 65-155 70z" fill="#e8b37c"/>
+    <path d="M0 80v150l155 70V150z" fill="#cf8c5c"/>
+    <path d="M310 80v150l-155 70V150z" fill="#b96f4b"/>
+    <path d="M105 76l50-22 52 23-51 24z" fill="#fff2dc"/>
+    <text x="154" y="114" text-anchor="middle" fill="#164e47" font-family="Georgia, serif" font-size="30">AI</text>
+  </g>
+  <g transform="translate(430 1050)" filter="url(#shadow)">
+    <path d="M0 65l100-42 110 42-105 48z" fill="#e1d1a7"/>
+    <path d="M0 65v112l105 50V113z" fill="#c4a878"/>
+    <path d="M210 65v112l-105 50V113z" fill="#9a7a53"/>
+    <circle cx="105" cy="82" r="20" fill="#1a6857"/>
+  </g>
+</svg>

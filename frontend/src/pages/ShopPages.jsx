@@ -185,8 +185,12 @@ import '../Agent.css'
 
 const categories = ['Electronics', 'Fashion', 'Beauty', 'Home & Kitchen', 'Grocery', 'Sports', 'Books', 'Accessories']
 const money = (value) => `₹${Number(value || 0).toLocaleString('en-IN')}`
+const WISHLIST_KEY = 'ai-commerce-wishlist'
+const readWishlist = () => { try { return JSON.parse(localStorage.getItem(WISHLIST_KEY) || '[]') } catch { return [] } }
+const isWishlisted = (product) => readWishlist().some((item) => item._id === product?._id)
+const toggleWishlist = (product) => { const items = readWishlist(); const exists = items.some((item) => item._id === product?._id); const next = exists ? items.filter((item) => item._id !== product._id) : [...items, product]; localStorage.setItem(WISHLIST_KEY, JSON.stringify(next)); window.dispatchEvent(new CustomEvent('wishlistchange')); return !exists }
 const categoryImages = {
-  phone: 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&w=900&q=80',
+  phone: 'https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?auto=format&fit=crop&w=900&q=80',
   laptop: 'https://images.unsplash.com/photo-1496181133206-80ce9b88a853?auto=format&fit=crop&w=900&q=80',
   headphone: 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?auto=format&fit=crop&w=900&q=80',
   watch: 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&w=900&q=80',
@@ -195,15 +199,54 @@ const categoryImages = {
   monitor: 'https://images.unsplash.com/photo-1527443224154-c4a3942d3acf?auto=format&fit=crop&w=900&q=80',
   keyboard: 'https://images.unsplash.com/photo-1587829741301-dc798b83add3?auto=format&fit=crop&w=900&q=80',
   gaming: 'https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=900&q=80',
+  speaker: 'https://images.unsplash.com/photo-1545454675-3531b543be5d?auto=format&fit=crop&w=900&q=80',
+  hub: 'https://images.unsplash.com/photo-1625842268584-8f3296236761?auto=format&fit=crop&w=900&q=80',
+  charger: 'https://images.unsplash.com/photo-1583863788434-e58a36330cf0?auto=format&fit=crop&w=900&q=80',
+  mouse: 'https://images.unsplash.com/photo-1527814050087-3793815479db?auto=format&fit=crop&w=900&q=80',
+  backpack: 'https://images.unsplash.com/photo-1553062407-98eeb64c6a62?auto=format&fit=crop&w=900&q=80',
+  jewelry: 'https://images.unsplash.com/photo-1515562141207-7a88fb7ce338?auto=format&fit=crop&w=900&q=80',
+  saree: 'https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&w=900&q=80',
+  book: 'https://images.unsplash.com/photo-1544947950-fa07a98d237f?auto=format&fit=crop&w=900&q=80',
+  bottle: 'https://images.unsplash.com/photo-1602143407151-7111542de6e8?auto=format&fit=crop&w=900&q=80',
+  headlamp: 'https://images.unsplash.com/photo-1506260408121-e353d10b87c7?auto=format&fit=crop&w=900&q=80',
+  trainer: 'https://images.unsplash.com/photo-1542291026-7eec264c27ff?auto=format&fit=crop&w=900&q=80',
   sports: 'https://images.unsplash.com/photo-1531415074968-036ba1b575da?auto=format&fit=crop&w=900&q=80',
   kitchen: 'https://images.unsplash.com/photo-1556911220-e15b29be8c8f?auto=format&fit=crop&w=900&q=80',
-  accessory: 'https://images.unsplash.com/photo-1526170375885-4d8ecf77b99f?auto=format&fit=crop&w=900&q=80',
+}
+const knownImageCategories = Object.fromEntries(Object.entries({
+  phone: ['1511707171634-5f897ff02aa9', '1523275335684-37898b6baf30'],
+  laptop: ['1496181133206-80ce9b88a853'],
+  headphone: ['1505740420928-5e560c06d30e'],
+  watch: ['1523275335684-37898b6baf30'],
+  tablet: ['1544244015-0df4b3ffc6b0'],
+  camera: ['1516035069371-29a1b244cc32'],
+  monitor: ['1527443224154-c4a3942d3acf'],
+  keyboard: ['1587829741301-dc798b83add3'],
+  gaming: ['1542751371-adc38448a05e'],
+  accessory: ['1526170375885-4d8ecf77b99f'],
+  book: ['1544947950-fa07a98d237f'],
+  bottle: ['1602143407151-7111542de6e8'],
+  headlamp: ['1506260408121-e353d10b87c7'],
+  trainer: ['1542291026-7eec264c27ff'],
+}).flatMap(([key, ids]) => ids.map((id) => [id, key])))
+const placeholderFor = (label) => `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="900" height="700" viewBox="0 0 900 700"><rect width="900" height="700" fill="#eaf2ed"/><rect x="80" y="100" width="740" height="500" rx="28" fill="#d5e8dc"/><text x="450" y="350" text-anchor="middle" dominant-baseline="middle" fill="#1f6b4b" font-family="Arial,sans-serif" font-size="42" font-weight="700">${label}</text><text x="450" y="410" text-anchor="middle" fill="#5d6b63" font-family="Arial,sans-serif" font-size="22">No product image available</text></svg>`)}`
+const imageKeyFor = (product) => {
+  const text = `${product?.name || ''} ${product?.subcategory || ''} ${product?.category || ''} ${(product?.tags || []).join(' ')}`.toLowerCase()
+  const keys = ['running bottle', 'headlamp', 'trainer', 'book', 'laptop', 'phone', 'tablet', 'headphone', 'earbud', 'monitor', 'keyboard', 'mouse', 'smartwatch', 'watch', 'camera', 'backpack', 'bag', 'jewelry', 'jewellery', 'saree', 'speaker', 'hub', 'charger', 'printer', 'webcam', 'ssd', 'ram', 'power bank', 'usb cable', 'gaming', 'sports', 'kitchen', 'accessor']
+  const match = keys.find((key) => text.includes(key))
+  if (match === 'earbud' || match === 'headphone') return 'headphone'
+  if (match === 'smartwatch') return 'watch'
+  if (match === 'bag') return 'backpack'
+  if (match === 'jewellery') return 'jewelry'
+  if (match === 'running bottle') return 'bottle'
+  return match || null
 }
 const imageFor = (product) => {
-  if (product?.images?.[0]) return product.images[0]
-  const text = `${product?.name || ''} ${product?.subcategory || ''} ${product?.category || ''}`.toLowerCase()
-  const key = Object.keys(categoryImages).find((candidate) => text.includes(candidate)) || 'accessory'
-  return categoryImages[key]
+  const key = imageKeyFor(product)
+  const storedImage = product?.images?.[0]
+  const storedCategory = storedImage ? knownImageCategories[Object.keys(knownImageCategories).find((id) => storedImage.includes(id))] : null
+  if (storedImage && storedCategory && storedCategory === key) return storedImage
+  return key && categoryImages[key] ? categoryImages[key] : placeholderFor(product?.name || product?.category || 'Product')
 }
 const imageErrorFallback = (event, product) => {
   const fallback = imageFor({ ...product, images: [] })
@@ -213,14 +256,25 @@ const imageErrorFallback = (event, product) => {
 
 function ProductCard({ product, onAdd }) {
   const [busy, setBusy] = useState(false)
+  const [saved, setSaved] = useState(() => isWishlisted(product))
   const sellingPrice = product.price?.sellingPrice || product.price || 0
   const originalPrice = product.price?.mrp || product.originalPrice
   const discount = product.discountPercentage || product.price?.discountPercentage || (originalPrice ? Math.round((1 - sellingPrice / originalPrice) * 100) : 0)
   const handleAdd = async () => { setBusy(true); await onAdd(product); setBusy(false) }
   return <article className="product-card">
-    <Link to={`/shop/products/${product._id}`} className="product-image-wrap"><img src={imageFor(product)} onError={(event) => imageErrorFallback(event, product)} alt={product.name} /><span className="ai-badge"><Sparkles size={13} /> AI pick</span><button className="icon-button wishlist" aria-label="Add to wishlist" onClick={(event) => event.preventDefault()}><Heart size={17} /></button></Link>
+    <Link to={`/shop/products/${product._id}`} className="product-image-wrap"><img src={imageFor(product)} onError={(event) => imageErrorFallback(event, product)} alt={product.name} /><span className="ai-badge"><Sparkles size={13} /> AI pick</span><button className="icon-button wishlist" aria-label={saved ? 'Remove from wishlist' : 'Add to wishlist'} aria-pressed={saved} onClick={(event) => { event.preventDefault(); event.stopPropagation(); setSaved(toggleWishlist(product)) }}><Heart size={17} fill={saved ? 'currentColor' : 'none'} /></button></Link>
     <div className="product-card-body"><p className="eyebrow">{product.category}</p><Link to={`/shop/products/${product._id}`}><h3>{product.name}</h3></Link><div className="rating"><Star size={15} fill="currentColor" /> {product.ratings?.average || product.rating || '4.6'} <span>({product.ratings?.count || product.reviewCount || 0})</span></div><div className="price-row"><strong>{money(sellingPrice)}</strong>{originalPrice && <><del>{money(originalPrice)}</del><span className="discount">{discount}% off</span></>}</div><button className="add-button" onClick={handleAdd} disabled={busy || product.stock < 1}>{busy ? 'Adding...' : product.stock < 1 ? 'Out of stock' : 'Add to cart'}</button></div>
   </article>
+}
+
+export function WishlistPage({ onAdd }) {
+  const [items, setItems] = useState(() => readWishlist())
+  useEffect(() => {
+    const refresh = () => setItems(readWishlist())
+    window.addEventListener('wishlistchange', refresh)
+    return () => window.removeEventListener('wishlistchange', refresh)
+  }, [])
+  return <section className="section catalog"><div className="catalog-heading"><div><p className="eyebrow">Saved for later</p><h1>Wishlist</h1></div></div>{!items.length ? <div className="empty-state"><Heart size={38} /><h2>Your wishlist is empty.</h2><Link className="button primary" to="/shop/products">Continue shopping</Link></div> : <div className="product-grid">{items.map((product) => <ProductCard key={product._id} product={product} onAdd={onAdd} />)}</div>}</section>
 }
 
 export function ShopHome({ onAdd }) {

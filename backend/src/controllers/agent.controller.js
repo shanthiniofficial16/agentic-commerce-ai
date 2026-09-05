@@ -5,7 +5,7 @@ const Merchant = require('../models/Merchant');
 const Product = require('../models/Product');
 const Cart = require('../models/Cart');
 const { runAgent, isPurchaseIntent } = require('../services/agent/agentService');
-const { createOrder, createPendingPayment } = require('../services/order.service');
+const { createOrder, createPendingPayment, getProfile } = require('../services/order.service');
 const { executeTool } = require('../services/agent/tools');
 const { sanitizeErrorPayload } = require('../utils/errorMessageMap');
 
@@ -254,7 +254,15 @@ const chat = async (req, res) => {
     const result = await runAgent({
       message: message.trim(),
       history: conversation.messages.slice(-12),
-      context: { userId: req.userId, merchantId: merchant._id, currentProduct, selectedProductId: conversation.selectedProductId, pendingOrder: conversation.pendingOrder },
+      context: {
+        userId: req.userId,
+        merchantId: merchant._id,
+        currentProduct,
+        selectedProductId: conversation.selectedProductId,
+        pendingOrder: conversation.pendingOrder,
+        customerProfile: await getProfile(req.userId),
+        allowPartialProfileUpdate: true,
+      },
     });
 
     if (result.pendingOrder) {

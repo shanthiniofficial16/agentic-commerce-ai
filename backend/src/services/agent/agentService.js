@@ -18,6 +18,50 @@ const friendlyFieldLabel = (field) => {
   return labels[field] || field;
 };
 
+const profileValueFromReply = (field, message) => {
+  const value = String(message || '').trim().replace(/^['"]|['"]$/g, '');
+  if (!value || /^(yes|no|okay|ok|confirm|cancel)$/i.test(value)) return '';
+  if (field === 'phone' && !/^[6-9]\d{9}$/.test(value.replace(/\D/g, ''))) return '';
+  if (field === 'pincode' && !/^\d{6}$/.test(value.replace(/\D/g, ''))) return '';
+  if (field === 'email' && !/^\S+@\S+\.\S+$/.test(value)) return '';
+  return field === 'phone' || field === 'pincode' ? value.replace(/\D/g, '') : value;
+};
+
+const resumeProfileRequiredOrder = async ({ message, context }) => {
+  const pending = context.pendingOrder;
+  const field = pending?.requiredFields?.[0];
+  if (!field) return null;
+
+  const normalizedField = field === 'address' ? 'street' : field;
+  const value = profileValueFromReply(normalizedField, message);
+  if (!value) return null;
+
+  const saved = await executeTool('updateCustomerProfile', { [normalizedField]: value }, context);
+  context.customerProfile = saved.profile;
+  const refreshed = await executeTool('getCustomerProfile', {}, context);
+  if (!refreshed.profileComplete) {
+    const nextField = refreshed.missingFields?.[0] || refreshed.invalidFields?.[0] || normalizedField;
+    return {
+      text: `Thanks. I still need your ${friendlyFieldLabel(nextField)} to continue.`,
+      products: [],
+      pendingOrder: { ...pending, requiredFields: [...new Set([...(refreshed.missingFields || []), ...(refreshed.invalidFields || [])])] },
+    };
+  }
+
+  const prepared = pending.productId
+    ? await executeTool('prepareOrder', { productId: pending.productId, quantity: pending.quantity || 1 }, context)
+    : await executeTool('prepareCartOrder', {}, context);
+  context.pendingOrder = prepared;
+  if (prepared.state !== 'PENDING_CONFIRMATION') return null;
+
+  const profile = prepared.profile || context.customerProfile || {};
+  const deliveryLine = [profile.fullName, profile.address || [profile.street, profile.building, profile.landmark].filter(Boolean).join(', '), profile.city && profile.state ? `${profile.city}, ${profile.state}` : profile.city || profile.state, profile.pincode, profile.phone].filter(Boolean).join('\n');
+  const productLine = prepared.product
+    ? `${prepared.product.name}\nPrice: ₹${Number(prepared.product.price).toLocaleString('en-IN')}`
+    : (prepared.items || []).map((item) => `${item.name} — ₹${Number(item.price).toLocaleString('en-IN')} × ${item.quantity}`).join('\n');
+  return { text: `${productLine}\n\nDelivery to:\n${deliveryLine}\n\nDo you want to confirm your order? Yes / No`, products: [], pendingOrder: prepared };
+};
+
 const normalizeProductQuery = (message) => message.replace(/\b(i want to buy|i want|buy|purchase|order|please|the|a|an)\b/gi, ' ').replace(/\s+/g, ' ').trim();
 const normalizeCatalogName = (value = '') => String(value).toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
 const getProductId = (product) => product?._id ? product._id.toString() : product?.id || null;
@@ -117,6 +161,7 @@ const isAddAfterComparison = (message) => /\b(add|put)\b.*\b(cart|it|one|better|
 const isRemoveCartRequest = (message) => /\b(remove|delete)\b.*\bcart\b/i.test(message);
 const isUpdateCartRequest = (message) => /\b(change|update|set)\b.*\b(quantity|cart)\b/i.test(message);
 const isClearCartRequest = (message) => /\b(clear|empty)\b.*\bcart\b/i.test(message);
+const isGenericAddRequest = (message) => /^\s*(?:add|put)\s+(?:(?:this|it|that)\s+)?(?:to|in)\s+(?:my\s+)?cart\s*[.!?]*\s*$/i.test(message);
 const requestedCartQuantity = (message) => Number(String(message).match(/\b(?:to|quantity\s*(?:of|to)?)\s*(\d+)\b/i)?.[1] || 0);
 const resolveCartMutationTarget = async ({ message, context }) => {
   const result = await executeTool('getCart', {}, context);
@@ -126,6 +171,26 @@ const resolveCartMutationTarget = async ({ message, context }) => {
     const name = normalizeCatalogName(item.productId?.name || item.name || '');
     return name && normalizedMessage.includes(name);
   }) || (items.length === 1 ? items[0] : null);
+};
+
+const resolveSimpleCategoryRequest = async ({ message, context }) => {
+  const text = message.toLowerCase();
+  const categories = [
+    { terms: /\bphones?\b|\bmobile(s)?\b/, category: 'Phones' },
+    { terms: /\bmice?\b|\bmouse\b/, category: 'Accessories', match: /mouse/i },
+    { terms: /\bkeyboards?\b/, category: 'Accessories', match: /keyboard/i },
+    { terms: /\bheadphones?\b|\bearbuds?\b|\bearphones?\b/, category: 'Audio', match: /headphone|earbud|earphone/i },
+    { terms: /\bmonitors?\b|\bdisplays?\b/, category: 'Monitors', match: /monitor|display/i },
+    { terms: /\btablets?\b/, category: 'Tablets' },
+    { terms: /\bcameras?\b/, category: 'Cameras' },
+    { terms: /\bsmartwatches?\b|\bsmart watches?\b/, category: 'Smartwatches' },
+  ];
+  const match = categories.find((entry) => entry.terms.test(text));
+  if (!match || /\b(add|buy|purchase|order|compare|recommend|under|between|budget)\b/.test(text)) return null;
+  const result = await executeTool('searchProducts', { category: match.category, inStock: true }, context);
+  const products = (result.products || []).filter((product) => !match.match || match.match.test(`${product.name} ${product.subcategory} ${product.tags || ''}`)).slice(0, 10);
+  if (!products.length) return null;
+  return { text: `Here are the available ${match.category.toLowerCase()} products:\n${products.map((product) => `• ${product.name} — ₹${Number(product.price).toLocaleString('en-IN')} — Available (${product.stock} in stock)`).join('\n')}`, products, pendingOrder: null, selectedProductId: getProductId(products[0]) };
 };
 
 const compareFromContext = async ({ message, history, context }) => {
@@ -147,6 +212,30 @@ const compareFromContext = async ({ message, history, context }) => {
     return { text: `I compared the products and selected ${selected.name} based on the available rating and price data.\n\n${lines.join('\n')}\n\nDone — ${selected.name} was added to your cart.`, products, selectedProductId: selected.id, cart: verified.cart, added: added.added };
   }
   return { text: `I compared these products using their real catalog data:\n${lines.join('\n')}\n\nBased on the available rating and price data, ${selected.name} is the stronger choice.`, products, selectedProductId: selected.id };
+};
+
+const isComparisonRecommendationRequest = (message) => {
+  const text = String(message || '').toLowerCase();
+  if (!/(which|what|recommend|suggest|better|best|choose|buy)/.test(text)) return false;
+  if (/(price|cost|available|stock|specification|specs|compare|comparison)/.test(text)) return false;
+  return !/(accessor|mouse|keyboard|bag|headphone|earbud|charger|case)/.test(text);
+};
+
+const recommendFromContext = async ({ history, context }) => {
+  const recent = getRecentProducts(history);
+  const unique = [...new Map(recent.filter((product) => product?.id).map((product) => [product.id, product])).values()].slice(0, 4);
+  if (unique.length < 2) return null;
+
+  const comparison = await executeTool('compareProducts', { productIds: unique.map((product) => product.id) }, context);
+  const products = comparison.products || [];
+  if (!products.length) return null;
+  const selected = [...products].sort((a, b) => (Number(b.rating || 0) - Number(a.rating || 0)) || (Number(a.price || 0) - Number(b.price || 0)))[0];
+  return {
+    text: `I recommend ${selected.name} at ₹${Number(selected.price).toLocaleString('en-IN')}. It is the strongest choice among the products we compared based on the available rating, price, and specifications.`,
+    products,
+    pendingOrder: null,
+    selectedProductId: selected.id,
+  };
 };
 
 const isPurchaseIntent = (message) => {
@@ -698,6 +787,11 @@ const runAgent = async ({ message, history = [], context }) => {
     stock: context.currentProduct.stock,
   } : null;
 
+  if (context.pendingOrder?.state === 'PROFILE_REQUIRED') {
+    const resumed = await resumeProfileRequiredOrder({ message, context });
+    if (resumed) return resumed;
+  }
+
   if (isNavigationRequest(message) && !isCheckoutRequest(message)) {
     const path = navigationPathFor(message);
     const result = await executeTool('navigate', { path }, context);
@@ -748,12 +842,63 @@ const runAgent = async ({ message, history = [], context }) => {
     if (comparison) return { ...comparison, pendingOrder: null };
   }
 
+  if (isComparisonRecommendationRequest(message)) {
+    const recommendation = await recommendFromContext({ history, context });
+    if (recommendation) return recommendation;
+  }
+
+  if (isGenericAddRequest(message)) {
+    const target = currentProduct || getPreviousProductFromContext(history, context);
+    const productId = getProductId(target);
+    if (productId) {
+      const productResult = await executeTool('getProductDetails', { productId }, context);
+      const quantity = parseRequestedQuantity(message);
+      const cartResult = await executeTool('addToCart', { productId, quantity }, context);
+      if (!cartResult.verified) throw new Error(`I could not verify that ${productResult.product.name} was added to the cart`);
+      return { text: `${productResult.product.name} was added to your cart. Current total: ₹${Number(cartResult.total || 0).toLocaleString('en-IN')}.`, products: [productResult.product], pendingOrder: null, selectedProductId: productId, cart: cartResult.cart };
+    }
+  }
+
+  const simpleCategoryResult = await resolveSimpleCategoryRequest({ message, context });
+  if (simpleCategoryResult) return simpleCategoryResult;
+
   const combinedIntent = await resolveCombinedShoppingIntent({ message, history, context });
   if (combinedIntent) {
     return combinedIntent;
   }
 
   const isLaptopInquiry = /\blaptop\b/i.test(message) && !/\b(add|buy|purchase|order|place)\b/i.test(message);
+const isAlternateLaptopRequest = (message) => /\b(one\s+more|another|different|other)\b[\s\S]*\b(laptop|lap\s+top)\b/i.test(message);
+
+const resolveAlternateLaptopRequest = async ({ message, history = [], context }) => {
+  const previous = getPreviousProductFromContext(history, context);
+  const previousId = getProductId(previous);
+  const query = {
+    merchantId: context.merchantId,
+    active: true,
+    stock: { $gt: 0 },
+    ...(previousId ? { _id: { $ne: previousId } } : {}),
+    $or: [
+      { category: /laptop/i },
+      { subcategory: /laptop/i },
+      { name: /laptop/i },
+    ],
+  };
+  const products = await Product.find(query).sort({ createdAt: -1 }).limit(20).lean();
+  const recommendation = getLaptopRecommendation({ products, message: 'laptop' });
+  if (recommendation.noMatch) return { text: recommendation.message, products: [], pendingOrder: null };
+  return {
+    text: `Here is another laptop option:\n\n${recommendation.summary}`,
+    products: [recommendation.product],
+    pendingOrder: null,
+    selectedProductId: getProductId(recommendation.product),
+  };
+};
+
+  if (isAlternateLaptopRequest(message)) {
+    return resolveAlternateLaptopRequest({ message, history, context });
+  }
+
   if (isLaptopInquiry && !shouldGenerateCheckoutRecommendations({ message, context })) {
     const searchResult = await executeTool('searchProducts', { category: 'Laptops', inStock: true, query: message, keywords: normalizeProductQuery(message) }, context);
     const products = Array.isArray(searchResult?.products) ? searchResult.products : [];
@@ -1056,7 +1201,7 @@ const runAgent = async ({ message, history = [], context }) => {
   }
 
   const messages = [
-    { role: 'system', content: `${SYSTEM_PROMPT}${currentProduct ? `\nThe customer is currently viewing this real catalog product: ${JSON.stringify(currentProduct)}` : ''}` },
+    { role: 'system', content: `${SYSTEM_PROMPT}\nAuthenticated customer profile (use it; do not ask for fields that are present): ${JSON.stringify(context.customerProfile || {})}${currentProduct ? `\nThe customer is currently viewing this real catalog product: ${JSON.stringify(currentProduct)}` : ''}` },
     ...history.map((item) => ({
       role: item.role === 'AGENT' ? 'assistant' : 'user',
       content: item.metadata?.products?.length

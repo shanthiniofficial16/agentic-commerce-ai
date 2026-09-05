@@ -83,6 +83,24 @@ const saveProfile = async (userId, input) => {
   return normalizeProfile(User.buildCustomerProfile(user));
 };
 
+const mergeProfile = async (userId, input) => {
+  const user = await User.findById(userId);
+  if (!user) throw Object.assign(new Error('User not found'), { code: 'USER_NOT_FOUND', status: 404 });
+
+  const profileInput = normalizeProfile({ ...(user.profile || {}), ...(input || {}) });
+  if (profileInput.address && !profileInput.street) {
+    const [streetValue, buildingValue, landmarkValue] = profileInput.address.split(',').map((part) => part.trim());
+    profileInput.street = streetValue || '';
+    profileInput.building = buildingValue || '';
+    profileInput.landmark = landmarkValue || '';
+  }
+  user.profile = { ...(user.profile || {}), ...profileInput };
+  user.name = profileInput.fullName || user.name;
+  user.email = profileInput.email || user.email;
+  await user.save();
+  return normalizeProfile(User.buildCustomerProfile(user));
+};
+
 const getOrdersForUser = async (userId, merchantId) => {
   const orders = await Order.find({ userId, ...(merchantId ? { merchantId } : {}) }).populate('items.productId', 'images').sort({ createdAt: -1 }).lean();
   return orders.map((order) => ({
@@ -314,4 +332,4 @@ const createOrder = async ({ userId, merchantId, pendingOrder, idempotencyKey, p
   }
 };
 
-module.exports = { getProfile, profileStatus, saveProfile, prepareOrder, prepareCartOrder, createPendingPayment, verifyAndFinalizePayment, finalizeVerifiedCheckout, getOrdersForUser, createOrder, validateProfile, profileFields };
+module.exports = { getProfile, profileStatus, saveProfile, mergeProfile, prepareOrder, prepareCartOrder, createPendingPayment, verifyAndFinalizePayment, finalizeVerifiedCheckout, getOrdersForUser, createOrder, validateProfile, profileFields };

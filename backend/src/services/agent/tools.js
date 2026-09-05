@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 const Cart = require('../../models/Cart');
 const Order = require('../../models/Order');
 const Product = require('../../models/Product');
-const { createOrder, getProfile, profileStatus, prepareOrder, prepareCartOrder, saveProfile, profileFields } = require('../order.service');
+const { createOrder, getProfile, profileStatus, prepareOrder, prepareCartOrder, saveProfile, mergeProfile, profileFields } = require('../order.service');
 
 const productView = (product) => ({
   id: product._id.toString(),
@@ -235,7 +235,7 @@ const executeTool = async (name, rawArgs, context) => {
   }
   if (name === 'updateCustomerProfile') {
     const supplied = Object.fromEntries(Object.entries(args).filter(([, value]) => value !== undefined && value !== null && String(value).trim()));
-    const profile = await saveProfile(userId, supplied);
+    const profile = context.allowPartialProfileUpdate ? await mergeProfile(userId, supplied) : await saveProfile(userId, supplied);
     const missingFields = profileFields.filter((field) => !profile?.[field]?.toString().trim());
     const status = profileStatus(profile);
     return { saved: status.profileComplete, missingFields, invalidFields: status.invalidFields, profile: { ...profile, phone: profile.phone.replace(/(\d{2})\d{6}(\d{2})/, '$1******$2') } };

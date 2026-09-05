@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { ArrowRight, Bot, Check, Eye, EyeOff, Lock, Mail, MapPin, Phone, ShieldCheck, Sparkles, User } from 'lucide-react'
+import { ArrowRight, Eye, EyeOff, Lock, Mail, User, Phone, MapPin, Check } from 'lucide-react'
 import axios from 'axios'
 import { useAuth } from '../hooks/useAuth'
 
@@ -26,34 +26,284 @@ export default function Register() {
     e.preventDefault()
     setError('')
     setLoading(true)
+
     try {
-      const response = await axios.post('/api/auth/register', {
+      const payload = {
         name,
         email,
         password,
         role,
         fullName: name,
-        phone,
-        street,
-        building,
-        landmark,
-        city,
-        state,
-        pincode,
-      })
-      if (response.data.success) {
-        login(response.data.data.user, response.data.data.token)
-        navigate(response.data.data.user.role === 'MERCHANT' ? '/merchant/dashboard' : '/shop')
+      }
+
+      if (role === 'CUSTOMER') {
+        payload.phone = phone
+        payload.street = street
+        payload.building = building
+        payload.landmark = landmark
+        payload.city = city
+        payload.state = state
+        payload.pincode = pincode
+      }
+
+      const response = await axios.post('/api/auth/register', payload)
+      const { user, token } = response.data.data
+
+      login(user, token)
+
+      if (user.role === 'MERCHANT') {
+        navigate('/merchant/dashboard')
+      } else {
+        navigate('/shop')
       }
     } catch (err) {
-      setError(err.response?.data?.error?.message || 'Registration failed')
-    } finally {
+      setError(err.response?.data?.error?.message || err.response?.data?.message || 'Registration failed. Please try again.')
       setLoading(false)
     }
   }
 
-  return <main className="login-page register-page">
-    <section className="login-brand-panel"><div className="login-grid-pattern" /><div className="login-brand-content"><Link to="/login" className="login-brand"><span><Bot size={23} /></span><strong>AI Commerce</strong></Link><div className="login-brand-copy"><p className="login-kicker"><span /> Start with better commerce</p><h1>Build your<br /><em>next chapter.</em></h1><p>Join an intelligent commerce platform built for discovery, connection, and measurable growth.</p></div><div className="login-features"><div className="login-feature"><span className="login-feature-icon"><Sparkles size={17} /></span><div><strong>Personalised by design</strong><p>Make every customer interaction feel considered and useful.</p></div></div><div className="login-feature"><span className="login-feature-icon"><Check size={17} /></span><div><strong>One connected experience</strong><p>Bring shopping, payments, and insight into one place.</p></div></div><div className="login-feature"><span className="login-feature-icon"><ShieldCheck size={17} /></span><div><strong>Ready to grow</strong><p>Start with a secure foundation for your commerce journey.</p></div></div></div></div><div className="login-orb orb-one" /><div className="login-orb orb-two" /><div className="login-orb orb-three" /></section>
-    <section className="login-form-panel"><div className="login-card"><div className="login-card-header"><p className="login-kicker">Create your account</p><h2>Start your smarter journey</h2><p>Set up your AI Commerce account in a few seconds.</p></div><form onSubmit={handleSubmit} noValidate><label className="login-label" htmlFor="register-name">Full name</label><div className="login-input-wrap"><User size={18} /><input id="register-name" type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="Enter your full name" autoComplete="name" required /></div><label className="login-label" htmlFor="register-email">Email address</label><div className="login-input-wrap"><Mail size={18} /><input id="register-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Enter your email" autoComplete="email" required /></div><label className="login-label" htmlFor="register-password">Password</label><div className="login-input-wrap"><Lock size={18} /><input id="register-password" type={showPassword ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Create a password" autoComplete="new-password" minLength={6} required /><button type="button" className="password-toggle" onClick={() => setShowPassword(!showPassword)} aria-label={showPassword ? 'Hide password' : 'Show password'}>{showPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button></div><label className="login-label" htmlFor="account-role">I am joining as</label><select id="account-role" className="login-select" value={role} onChange={(e) => setRole(e.target.value)}><option value="CUSTOMER">Customer</option><option value="MERCHANT">Merchant</option></select>{role === 'CUSTOMER' && (<><label className="login-label" htmlFor="register-phone">Phone number</label><div className="login-input-wrap"><Phone size={18} /><input id="register-phone" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="10-digit mobile number" autoComplete="tel" required /></div><label className="login-label" htmlFor="register-street">Delivery address</label><div className="login-input-wrap"><MapPin size={18} /><input id="register-street" type="text" value={street} onChange={(e) => setStreet(e.target.value)} placeholder="Street / house no. / colony" autoComplete="street-address" required /></div><div className="login-grid-cols"><div><label className="login-label" htmlFor="register-building">Building</label><div className="login-input-wrap"><input id="register-building" type="text" value={building} onChange={(e) => setBuilding(e.target.value)} placeholder="Building / flat" autoComplete="address-line2" /></div></div><div><label className="login-label" htmlFor="register-landmark">Landmark</label><div className="login-input-wrap"><input id="register-landmark" type="text" value={landmark} onChange={(e) => setLandmark(e.target.value)} placeholder="Nearby landmark" autoComplete="address-line3" /></div></div></div><div className="login-grid-cols"><div><label className="login-label" htmlFor="register-city">City</label><div className="login-input-wrap"><input id="register-city" type="text" value={city} onChange={(e) => setCity(e.target.value)} placeholder="City" autoComplete="address-level2" required /></div></div><div><label className="login-label" htmlFor="register-state">State</label><div className="login-input-wrap"><input id="register-state" type="text" value={state} onChange={(e) => setState(e.target.value)} placeholder="State" autoComplete="address-level1" required /></div></div></div><label className="login-label" htmlFor="register-pincode">Pincode</label><div className="login-input-wrap"><input id="register-pincode" type="text" value={pincode} onChange={(e) => setPincode(e.target.value)} placeholder="6-digit pincode" autoComplete="postal-code" required /></div></>)}{error && <div className="login-error" role="alert"><span>!</span><div><strong>Account creation failed</strong><p>{error}</p></div></div>}<button type="submit" className="login-submit" disabled={loading}>{loading ? <><span className="login-spinner" /> Creating account...</> : <>Create account <ArrowRight size={17} /></>}</button></form><p className="login-register">Already have an account? <Link to="/login">Sign in <ArrowRight size={14} /></Link></p><div className="login-trust"><ShieldCheck size={15} /> Secure authentication <span>•</span> Protected commerce environment</div></div></section>
-  </main>
+  return (
+    <main className="auth-page">
+      {/* Left Panel - Form */}
+      <div className="auth-form-section">
+        <div className="auth-form-container">
+          <div className="auth-header">
+            <Link to="/register" className="auth-logo">
+              <span className="auth-logo-mark">⚡</span>
+              <strong>AI Commerce</strong>
+            </Link>
+            <div className="auth-header-text">
+              <p className="auth-subtitle">Welcome to AI Commerce</p>
+              <h1>Create your account</h1>
+              <p className="auth-description">Join AI Commerce and let AI make shopping simpler.</p>
+            </div>
+          </div>
+
+          <form onSubmit={handleSubmit} className="auth-form">
+            {/* Full Name Field */}
+            <div className="auth-field-group">
+              <label className="auth-label">Full name</label>
+              <div className="auth-input-wrap">
+                <User size={18} className="auth-input-icon" />
+                <input
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Your full name"
+                  autoComplete="name"
+                  required
+                />
+              </div>
+            </div>
+
+            {/* Email Field */}
+            <div className="auth-field-group">
+              <label className="auth-label">Email address</label>
+              <div className="auth-input-wrap">
+                <Mail size={18} className="auth-input-icon" />
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="your@email.com"
+                  autoComplete="email"
+                  required
+                />
+              </div>
+            </div>
+
+            {/* Password Field */}
+            <div className="auth-field-group">
+              <label className="auth-label">Password</label>
+              <div className="auth-input-wrap">
+                <Lock size={18} className="auth-input-icon" />
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Create a password"
+                  autoComplete="new-password"
+                  required
+                />
+                <button
+                  type="button"
+                  className="auth-toggle-password"
+                  onClick={() => setShowPassword(!showPassword)}
+                >
+                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              </div>
+            </div>
+
+            {/* Role Selection */}
+            <div className="auth-field-group">
+              <label className="auth-label">I am joining as</label>
+              <select
+                value={role}
+                onChange={(e) => setRole(e.target.value)}
+                className="auth-select"
+              >
+                <option value="CUSTOMER">Customer - Shop & Buy</option>
+                <option value="MERCHANT">Merchant - Sell Products</option>
+              </select>
+            </div>
+
+            {/* Address Fields - Only for Customers */}
+            {role === 'CUSTOMER' && (
+              <>
+                {/* Phone Field */}
+                <div className="auth-field-group">
+                  <label className="auth-label">Phone number</label>
+                  <div className="auth-input-wrap">
+                    <Phone size={18} className="auth-input-icon" />
+                    <input
+                      type="tel"
+                      value={phone}
+                      onChange={(e) => setPhone(e.target.value)}
+                      placeholder="10-digit mobile number"
+                      autoComplete="tel"
+                      required
+                    />
+                  </div>
+                </div>
+
+                {/* Street Address */}
+                <div className="auth-field-group">
+                  <label className="auth-label">Delivery address</label>
+                  <div className="auth-input-wrap">
+                    <MapPin size={18} className="auth-input-icon" />
+                    <input
+                      type="text"
+                      value={street}
+                      onChange={(e) => setStreet(e.target.value)}
+                      placeholder="Street / house no. / colony"
+                      autoComplete="street-address"
+                      required
+                    />
+                  </div>
+                </div>
+
+                {/* Building & Landmark */}
+                <div className="auth-address-fields">
+                  <div className="auth-field-group">
+                    <label className="auth-label">Building</label>
+                    <div className="auth-input-wrap">
+                      <input
+                        type="text"
+                        value={building}
+                        onChange={(e) => setBuilding(e.target.value)}
+                        placeholder="Building / flat"
+                        autoComplete="address-line2"
+                      />
+                    </div>
+                  </div>
+                  <div className="auth-field-group">
+                    <label className="auth-label">Landmark</label>
+                    <div className="auth-input-wrap">
+                      <input
+                        type="text"
+                        value={landmark}
+                        onChange={(e) => setLandmark(e.target.value)}
+                        placeholder="Nearby landmark"
+                        autoComplete="address-line3"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* City, State, Pincode */}
+                <div className="auth-address-fields">
+                  <div className="auth-field-group">
+                    <label className="auth-label">City</label>
+                    <div className="auth-input-wrap">
+                      <input
+                        type="text"
+                        value={city}
+                        onChange={(e) => setCity(e.target.value)}
+                        placeholder="City"
+                        autoComplete="address-level2"
+                        required
+                      />
+                    </div>
+                  </div>
+                  <div className="auth-field-group">
+                    <label className="auth-label">State</label>
+                    <div className="auth-input-wrap">
+                      <input
+                        type="text"
+                        value={state}
+                        onChange={(e) => setState(e.target.value)}
+                        placeholder="State"
+                        autoComplete="address-level1"
+                        required
+                      />
+                    </div>
+                  </div>
+                  <div className="auth-field-group">
+                    <label className="auth-label">Pincode</label>
+                    <div className="auth-input-wrap">
+                      <input
+                        type="text"
+                        value={pincode}
+                        onChange={(e) => setPincode(e.target.value)}
+                        placeholder="6-digit pincode"
+                        autoComplete="postal-code"
+                        required
+                      />
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* Error Alert */}
+            {error && (
+              <div className="auth-error" role="alert">
+                <span className="auth-error-icon">!</span>
+                <div className="auth-error-content">
+                  <strong>Registration failed</strong>
+                  <p>{error}</p>
+                </div>
+              </div>
+            )}
+
+            {/* Submit Button */}
+            <button
+              type="submit"
+              className="auth-submit"
+              disabled={loading}
+            >
+              {loading ? (
+                <>
+                  <span className="auth-spinner" />
+                  Creating account...
+                </>
+              ) : (
+                <>
+                  Create account
+                  <ArrowRight size={17} />
+                </>
+              )}
+            </button>
+          </form>
+
+          {/* Footer */}
+          <p className="auth-footer">
+            Already have an account?{' '}
+            <Link to="/login" className="auth-link">
+              Sign in
+            </Link>
+          </p>
+        </div>
+      </div>
+
+      <div className="auth-visual-section" aria-label="AI Commerce shopping experience">
+        <img className="auth-visual-image" src="/images/premium-auth-commerce.svg" alt="AI Commerce products and smart shopping technology" />
+        <div className="auth-visual-overlay">
+          <span className="auth-visual-kicker">AI Commerce</span>
+          <p className="auth-visual-tagline">Shop smarter with AI.</p>
+        </div>
+      </div>
+    </main>
+  )
 }

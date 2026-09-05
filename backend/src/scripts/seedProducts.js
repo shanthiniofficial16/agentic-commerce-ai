@@ -7,7 +7,7 @@ const Merchant = require('../models/Merchant');
 const TARGET_COUNT = 600;
 const uri = process.env.MONGODB_URI || 'mongodb://localhost:27017/ai-commerce';
 const imageIds = {
-  Phones: '1523275335684-37898b6baf30',
+  Phones: '1511707171634-5f897ff02aa9',
   Laptops: '1496181133206-80ce9b88a853',
   Headphones: '1505740420928-5e560c06d30e',
   Smartwatches: '1523275335684-37898b6baf30',

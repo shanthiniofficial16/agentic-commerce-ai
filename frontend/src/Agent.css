@@ -416,7 +416,7 @@
   backdrop-filter: blur(12px);
 }
 
-.chat-form:focus-within { border-color: #b7cdbd; box-shadow: 0 14px 40px rgba(34, 49, 40, .12), 0 0 0 3px rgba(37, 98, 71, .07); }
+.chat-form:focus-within { border-color: #b7cdbd; }
 .chat-form input { min-width: 0; flex: 1; height: 38px; border: 0; outline: 0; background: transparent; color: var(--agent-ink); font-size: 14px; }
 .chat-form input::placeholder { color: #9aa39d; }
 .chat-form .button { flex: 0 0 auto; width: 38px; min-height: 38px; padding: 0; border-radius: 12px; font-size: 0; }
